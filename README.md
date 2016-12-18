@@ -36,14 +36,14 @@ Allows the WiFi control of a WS8212 LED strip using an ESP8266 controller and an
 | 11 | chance |
 
 ## Modes
-| Code | Mode |
+| Code | Mode | Useable Variables |
 |---|---|
 | 0 | All Off |
-| 1 | All On (rgbValueTwo) |
-| 2 | Fade to Colour (rgbValueTwo, colourDelay) |
-| 3 | Strobe (rgbValueOne, rgbValueTwo, colourDelay) |
-| 4 | Fire (colourDelay) |
-| 5 | Colour Phase (colourDelay) |
-| 6 | Sparkle (rgbValueOne, rgbValueTwo, colourDelay(r), colourJump(r), pixelDelay(r)) |
-| 7 | Shoot (rgbValueOne, rgbValueTwo, colourDelay, colourJump(r), pixelDelay, loopDelay(r), highPixelDelay, multiplier) |
-| 8 | Rain (rgbValueOne, rgbValueTwo, colourDelay, colourJump, chance) |
+| 1 | All On | rgbValueTwo |
+| 2 | Fade to Colour | rgbValueTwo, colourDelay |
+| 3 | Strobe | rgbValueOne, rgbValueTwo, colourDelay |
+| 4 | Fire | colourDelay |
+| 5 | Colour Phase | colourDelay |
+| 6 | Sparkle | rgbValueOne, rgbValueTwo, colourDelay(r), colourJump(r), pixelDelay(r) |
+| 7 | Shoot | rgbValueOne, rgbValueTwo, colourDelay, colourJump(r), pixelDelay, loopDelay(r), highPixelDelay, multiplier |
+| 8 | Rain | rgbValueOne, rgbValueTwo, colourDelay, colourJump, chance |
