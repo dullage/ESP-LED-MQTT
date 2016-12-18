@@ -37,7 +37,7 @@ Allows the WiFi control of a WS8212 LED strip using an ESP8266 controller and an
 
 ## Modes
 | Code | Mode | Useable Variables |
-|---|---|
+|---|---|---|
 | 0 | All Off |
 | 1 | All On | rgbValueTwo |
 | 2 | Fade to Colour | rgbValueTwo, colourDelay |
