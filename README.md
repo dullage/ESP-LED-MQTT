@@ -2,7 +2,8 @@
 Allows the WiFi control of a WS8212 LED strip using an ESP8266 controller and an MQTT broker.
 
 ## Transmission Codes
-| **No** | **Direction** | **Message** |
+| Code | Direction | Message |
+|---|---|---|
 | 0 | To ESP | Turn off |
 | 1 | To ESP | Turn on |
 | 2 | To ESP | Toggle |   
@@ -19,7 +20,8 @@ Allows the WiFi control of a WS8212 LED strip using an ESP8266 controller and an
 `{0:1,2:[0,0,255]} = Turn all LEDs to Blue (Mode = 1, rgbColourTwo = Blue)`
 
 ## Variables
-| **Code** | **Variable** |
+| Code | Variable |
+|---|---|
 | 0 | currentMode |
 | 1 | rgbVaueOne |
 | 2 | rgbValueTwo |
@@ -34,7 +36,8 @@ Allows the WiFi control of a WS8212 LED strip using an ESP8266 controller and an
 | 11 | chance |
 
 ## Modes
-| **Code** | **Mode** |
+| Code | Mode |
+|---|---|
 | 0 | All Off |
 | 1 | All On (rgbValueTwo) |
 | 2 | Fade to Colour (rgbValueTwo, colourDelay) |
