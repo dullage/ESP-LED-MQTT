@@ -1,23 +1,21 @@
 ## Overview
-Allows the WiFi control of a WS8212 LED strip using an ESP8266 controller and an MQTT broker.
+Allows the WiFi control of a WS8212 LED strip using an ESP8266 controller and an MQTT broker. Designed to work well with Home Assistant https://home-assistant.io/.
+
+To use this code simply configure the PIN and NUMPIXELS variables in the NeoPixel section. You will also need to configure the credentials for your WiFi and MQTT broker, see <REDACTED> code. Lastly you can tailor the MQTT topics as requried.
 
 ## Transmission Codes
-| Code | Direction | Message |
-|---|---|---|
-| 0 | To ESP | Turn off |
-| 1 | To ESP | Turn on |
-| 2 | To ESP | Toggle |   
-| 3 | To ESP | Go publish current state request |
-| 4 | From ESP | Current state broadcast Off |
-| 5 | From ESP | Current state broadcast On |
-| 6 | From ESP | Turn off | 
-| 7 | From ESP | Turn on |
-| 8 | From ESP | Toggle |
-| 9 | From ESP | Special |
-| { | To ESP | JSON |
+| Code | Message |
+|---|---|
+| 0 | Turn off |
+| 1 | Turn on |
+| 2 | Toggle |   
+| 9 | Mode Cycle |
+| { | JSON Control |
 
 #### JSON Example
-`{0:1,2:[0,0,255]} = Turn all LEDs to Blue (Mode = 1, rgbColourTwo = Blue)`
+The message below would turn all LEDs to Blue (Mode = 1, rgbColourTwo = Blue). See tables below for message options.
+
+`{0:1,2:[0,0,255]}`
 
 ## Variables
 | Code | Variable |
@@ -34,6 +32,7 @@ Allows the WiFi control of a WS8212 LED strip using an ESP8266 controller and an
 | 9 | highPixelDelay |
 | 10 | multiplier |
 | 11 | chance |
+| 12 | trailLength |
 
 ## Modes
 | Code | Mode | Useable Variables |
