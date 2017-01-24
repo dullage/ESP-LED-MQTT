@@ -6,7 +6,7 @@
 
 // Neopixel
 #define PIN            3
-#define NUMPIXELS      27 //112
+#define NUMPIXELS      30
 Adafruit_NeoPixel pixels = Adafruit_NeoPixel(NUMPIXELS, PIN, NEO_GRB + NEO_KHZ800);
 int ledArray[NUMPIXELS][3]; // Custom array to allow us to buffer changes before sending them
 
@@ -17,7 +17,7 @@ char* WiFiPassword = "<REDACTED>";
 
 // MQTT
 const char* mqtt_server = "<REDACTED>";
-int mqtt_port = 1883;
+int mqtt_port = <REDACTED>;
 const char* mqttUser = "<REDACTED>";
 const char* mqttPass = "<REDACTED>";
 PubSubClient client(espClient);
@@ -25,22 +25,32 @@ PubSubClient client(espClient);
 const uint8_t bufferSize = 20;
 char buffer[bufferSize];
 
-// ESP Specific Topics
-const char* deviceStateTopic = "switch/stairlamp/state";
-const char* deviceControlTopic = "switch/stairlamp";   
-const char* rgbStateTopic = "switch/stairlamp/rgb/state"; 
-const char* rgbControlTopic = "switch/stairlamp/rgb"; 
-//const char* brightnessStateTopic = "switch/stairlamp/brightness/state"; - Not yet implemented
-//const char* brightnessControlTopic = "switch/stairlamp/brightness"; - Not yet implemented
+// Reconnect Variables
+unsigned long reconnectStart = 0;
+unsigned long lastReconnectMessage = 0;
+unsigned long messageInterval = 1000;
+int currentReconnectStep = 0;
+
+// Device Specific Topics
+const char* deviceStateTopic = "switch/lamp/state";
+const char* deviceControlTopic = "switch/lamp";   
+const char* rgbStateTopic = "switch/lamp/rgb/state"; 
+const char* rgbControlTopic = "switch/lamp/rgb"; 
+//const char* brightnessStateTopic = "switch/lamp/brightness/state"; - Not yet implemented
+//const char* brightnessControlTopic = "switch/lamp/brightness"; - Not yet implemented
+
+// Device specific variables (currently only used for animations specific to my stair LEDs)
+boolean stairs = false;
+int stairPixelArray[13];
+int stairPixelArrayLength = 13;
 
 // Sun Position
 const char* sunPositionTopic = "sunPosition"; // This will be sent as a retained message so will be updated upon boot
 int sunPosition = 0;
 
-// Global Animation Variables
 #pragma region Global Animation Variables
+const int numModes = 11; // This is the total number of modes
 int currentMode; // 0
-const int numModes = 9; // This is the total number of modes
 
 int brightness = 255;
 
@@ -177,8 +187,22 @@ void setAnimationDefaults(int mode) {
 		chance = 15000;
 	}
 
-	// Mode 9
-	if (mode == 9) {
+	// Stairs On
+	else if (mode == 9) {
+		rgbValueTwo[0] = 255;
+		rgbValueTwo[1] = 147;
+		rgbValueTwo[2] = 41;
+	}
+
+	// Stair Startup
+	else if (mode == 10) {
+		rgbValueTwo[0] = 255;
+		rgbValueTwo[1] = 147;
+		rgbValueTwo[2] = 41;
+	}
+
+	// Stair Shutdown
+	else if (mode == 11) {
 		rgbValueTwo[0] = 255;
 		rgbValueTwo[1] = 147;
 		rgbValueTwo[2] = 41;
@@ -186,66 +210,99 @@ void setAnimationDefaults(int mode) {
 }
 
 void reconnect() {
-  // Reconnect to Wifi
-	if (WiFi.status() != WL_CONNECTED) {
-		Serial.println("");
-		Serial.print("Waiting for WiFi connection...");
-      
-		while (WiFi.status() != WL_CONNECTED) {
-			Serial.print(".");
-			delay(500);
+	// IF statements used instead of IF ELSE to complete process in single loop if possible
+
+	// 0 - Turn the LED on and log the reconnect start time
+	if (currentReconnectStep == 0) {
+		digitalWrite(LED_BUILTIN, LOW);
+		reconnectStart = millis();
+		currentReconnectStep++;
+	}
+
+	// 1 - Check WiFi Connection
+	if (currentReconnectStep == 1) {
+		if (WiFi.status() != WL_CONNECTED) {
+			if ((millis() - lastReconnectMessage) > messageInterval) {
+				Serial.print("Awaiting WiFi Connection (");
+				Serial.print((millis() - reconnectStart) / 1000);
+				Serial.println("s)");
+				lastReconnectMessage = millis();
+			}
 		}
-      
-		Serial.println("");
-		Serial.println("WiFi connected!");
-		Serial.print("SSID: ");
-		Serial.print(WiFi.SSID());
-		Serial.println("");
-		Serial.print("IP address: ");
-		Serial.print(WiFi.localIP());
-		Serial.println("");
-  }
-  
-  // Reconnect to MQTT Broker
-  if (!client.connected()) {
-    Serial.println("");
-    Serial.println("Waiting for MQTT connection...");
+		else {
+			Serial.println("WiFi connected!");
+			Serial.print("SSID: ");
+			Serial.print(WiFi.SSID());
+			Serial.println("");
+			Serial.print("IP address: ");
+			Serial.println(WiFi.localIP());
+			Serial.println("");
 
-	// Create a random client ID
-	String clientId = "ESP8266Client-";
-	clientId += String(random(0xffff), HEX);
-
-	int tryCount = 0;
-    while(!client.connect(clientId.c_str(), mqttUser, mqttPass)) {
-        Serial.print(".");
-
-		if (WiFi.status() != WL_CONNECTED) { // Check that there's still Wifi, return if not forcing back into the reconnection loop
-          return;
-        }
-
-		tryCount++;
-		if (tryCount > 8) {
-			ESP.restart(); // Restart the ESP upon failing 8 times
+			lastReconnectMessage = 0;
+			currentReconnectStep = 2;
 		}
+	}
 
-		delay(500);
-    }
+	// 2 - Check MQTT Connection
+	if (currentReconnectStep == 2) {
+		if (!client.connected()) {
+			if ((millis() - lastReconnectMessage) > messageInterval) {
+				Serial.print("Awaiting MQTT Connection (");
+				Serial.print((millis() - reconnectStart) / 1000);
+				Serial.println("s)");
+				lastReconnectMessage = millis();
 
-    Serial.println("Connected!");
-	Serial.println("");
+				String clientId = "ESP8266Client-";
+				clientId += String(random(0xffff), HEX);
+				client.connect(clientId.c_str(), mqttUser, mqttPass);
+			}
 
-    digitalWrite(LED_BUILTIN, HIGH);  // Turn the LED off
+			// Check the MQTT again and go forward if necessary
+			if (client.connected()) {
+				Serial.println("MQTT connected!");
+				Serial.println("");
 
-	// MQTT Subscriptions
-    client.subscribe(deviceControlTopic);
-	client.subscribe(rgbControlTopic);
-	//client.subscribe(brightnessControlTopic); - Not yet implemented
-	client.subscribe(sunPositionTopic);
-  }
+				lastReconnectMessage = 0;
+				currentReconnectStep = 3;
+			}
+
+			// Check the WiFi again and go back if necessary
+			else if (WiFi.status() != WL_CONNECTED) {
+				currentReconnectStep = 1;
+			}
+
+			// If we've been trying to connect for more than 2 minutes then restart the ESP
+			else if ((millis() - reconnectStart) > 120000) {
+				ESP.restart();
+			}
+		}
+		else {
+			Serial.println("MQTT connected!");
+			Serial.println("");
+
+			lastReconnectMessage = 0;
+			currentReconnectStep = 3;
+		}
+	}
+
+	// 3 - All connected, turn the LED back on and then subscribe to the MQTT topics
+	if (currentReconnectStep == 3) {
+		digitalWrite(LED_BUILTIN, HIGH);  // Turn the LED off
+
+		// MQTT Subscriptions (Note: Colour instructions can come from either the control topic or the rgb topic...
+		// ...it's best to prioritise the control topic (although this may be incorrect) and so we subscribe to...
+		// ...the control topic last so that the retained message on that topic supersceedes others.
+		client.subscribe(sunPositionTopic);
+		client.subscribe(rgbControlTopic);
+		//client.subscribe(brightnessControlTopic); - Not yet implemented
+		client.subscribe(deviceControlTopic);
+
+		currentReconnectStep = 0; // Reset
+	}
 }
 
 #pragma region MiscFunctions
-int* randomColour() {
+int* randomColour() { // Not yet used but could be useful
 	static int aRandomColour[3];
 
 	aRandomColour[0] = random(255);
@@ -272,11 +329,9 @@ void updateStripFromLedArray() {
 
 void publishState() {
 	if (currentMode == 0) {
-		client.publish(deviceControlTopic, "4");
 		client.publish(deviceStateTopic, "0");
 	}
 	else {
-		client.publish(deviceControlTopic, "5");
 		client.publish(deviceStateTopic, "1");
 	}
 }
@@ -365,7 +420,7 @@ void stairsOff() {
 	}
 }
 
-void fadeToColour() {
+void fadeToColour(bool useFlipFlop = false) {
   if (flipFlop == 0) { // This isn't used
     unsigned long currentMillis = millis();
     if (currentMillis - previousMillis >= colourDelay) {
@@ -380,21 +435,50 @@ void fadeToColour() {
               ledArray[pixel][colour] -= 1;                                 // Subtract 1
             }
           }
-          pixels.setPixelColor(pixel, pixels.Color(ledArray[pixel][0],ledArray[pixel][1],ledArray[pixel][2]));
+		  pixels.setPixelColor(pixel, pixels.Color(ledArray[pixel][0], ledArray[pixel][1], ledArray[pixel][2]));
         }
         else {
           count ++;
         }
       }
-      pixels.show();
-  
-      //if (count == NUMPIXELS) {
-      //  flipFlop = 1;
-      //}
+	  pixels.show();
+      if (count == NUMPIXELS && useFlipFlop == true) {
+        flipFlop = 1;
+      }
       
       previousMillis = currentMillis;
     }
   }
+}
+
+void fadePixelToColour(int pixelNo) {
+	if (millis() - previousMillis >= colourDelay) {
+		if (ledArray[pixelNo][0] != rgbValueTwo[0] | ledArray[pixelNo][1] != rgbValueTwo[1] | ledArray[pixelNo][2] != rgbValueTwo[2]) {
+
+			for (int colour = 0; colour < 3; colour++) {                    // For each colour
+				if (ledArray[pixelNo][colour] < rgbValueTwo[colour]) {      // If the colour value is less that it should be
+					ledArray[pixelNo][colour] += colourJump;                // Add the colour jump
+					if (ledArray[pixelNo][colour] > rgbValueTwo[colour]) {  // Jump back if we've jumped over it
+						ledArray[pixelNo][colour] = rgbValueTwo[colour];
+					}
+				}
+				else if (ledArray[pixelNo][colour] > rgbValueTwo[colour]) { // If the colour value is more that it should be
+					ledArray[pixelNo][colour] -= colourJump;                // Subtract the colour jump
+					if (ledArray[pixelNo][colour] < rgbValueTwo[colour]) {  // Jump back if we've jumped under it
+						ledArray[pixelNo][colour] = rgbValueTwo[colour];
+					}
+				}
+			}
+
+			pixels.setPixelColor(pixelNo, pixels.Color(ledArray[pixelNo][0], ledArray[pixelNo][1], ledArray[pixelNo][2]));
+			pixels.show();
+		}
+		else {
+			currentStep++;
+		}
+
+		previousMillis = millis();
+	}
 }
 
 void strobe() {
@@ -414,6 +498,7 @@ void strobe() {
   }
 }
 
+// Source: https://www.tweaking4all.com/hardware/arduino/adruino-led-strip-effects/#fire
 void fire(int Cooling, int Sparking, int SpeedDelay) { // Need to tailor variables and update LED array
   static byte heat[NUMPIXELS];
   int cooldown;
@@ -481,39 +566,39 @@ void colourPhase() {
     rgbValueTwo[0] = 255;
     rgbValueTwo[1] = 0;
     rgbValueTwo[2] = 0;
-    fadeToColour();
+    fadeToColour(true);
   }
   else if (currentStep == 1) {
     //Serial.println("1");
     rgbValueTwo[0] = 255;
     rgbValueTwo[1] = 255;
     rgbValueTwo[2] = 0;
-    fadeToColour();
+    fadeToColour(true);
   }
   else if (currentStep == 2) {
     //Serial.println("2");
     rgbValueTwo[0] = 0;
     rgbValueTwo[1] = 255;
     rgbValueTwo[2] = 0;
-    fadeToColour();
+    fadeToColour(true);
   }
   else if (currentStep == 3) {
     rgbValueTwo[0] = 0;
     rgbValueTwo[1] = 255;
     rgbValueTwo[2] = 255;
-    fadeToColour();
+    fadeToColour(true);
   }
   else if (currentStep == 4) {
     rgbValueTwo[0] = 0;
     rgbValueTwo[1] = 0;
     rgbValueTwo[2] = 255;
-    fadeToColour();
+    fadeToColour(true);
   }
   else if (currentStep == 5) {
     rgbValueTwo[0] = 255;
     rgbValueTwo[1] = 255;
     rgbValueTwo[2] = 255;
-    fadeToColour();
+    fadeToColour(true);
   }
 }
 
@@ -680,17 +765,17 @@ void shoot() {
 	}
 
 	// High Pixel Delay
-	if (currentStep == 4) {
-		if (currentMillis - previousMillis >= highPixelDelay) {
-			previousMillis = currentMillis;
-			highPixelDelay = (highPixelDelay * multiplier);
-			currentStep++;
-		}
+if (currentStep == 4) {
+	if (currentMillis - previousMillis >= highPixelDelay) {
+		previousMillis = currentMillis;
+		highPixelDelay = (highPixelDelay * multiplier);
+		currentStep++;
 	}
+}
 
-	// Roll Down
-	if (currentStep == 5 && (currentMillis - previousMillis >= colourDelay)) {
-	  if (trailLength == 0) {
+// Roll Down
+if (currentStep == 5 && (currentMillis - previousMillis >= colourDelay)) {
+	if (trailLength == 0) {
 		if (ledArray[currentPixel][0] != rgbValueOne[0] | ledArray[currentPixel][1] != rgbValueOne[1] | ledArray[currentPixel][2] != rgbValueOne[2]) {   // If the pixel hasn't reached base
 			for (int i = 1; !(i > colourJump); i++) {
 				for (int col = 0; col < 3; col++) {                                                                         // For each colour
@@ -719,7 +804,7 @@ void shoot() {
 		Serial.println("---");
 		Serial.print("currentPixel = ");
 		Serial.println(currentPixel);
-		
+
 		int currentTrailPixel = currentPixel; // Start with the current pixel as we're about to put the next one up
 
 		while (currentTrailPixel >= (currentPixel - (trailLength + 1))) {
@@ -733,7 +818,7 @@ void shoot() {
 					float trailPercentage = ((1.0 / trailLength) * (trailLength - trailDifference));
 					Serial.print("trailPercentage = ");
 					Serial.println(trailPercentage);
-					
+
 					ledArray[currentTrailPixel][0] = (rgbValueTwo[0] * trailPercentage);
 					ledArray[currentTrailPixel][1] = (rgbValueTwo[1] * trailPercentage);
 					ledArray[currentTrailPixel][2] = (rgbValueTwo[2] * trailPercentage);
@@ -749,7 +834,7 @@ void shoot() {
 		}
 
 		updateStripFromLedArray();
-		
+
 		if (currentPixel == ((NUMPIXELS - 1) + trailLength)) {
 			currentPixel = 0;
 			currentStep = 1;
@@ -759,8 +844,69 @@ void shoot() {
 			currentStep = 2;
 		}
 	}
-  previousMillis = currentMillis;
-  }
+	previousMillis = currentMillis;
+}
+}
+
+void stairStartup() {
+	if (currentStep == 0) {
+		//allRgbValueOne(); // Turn all the lights off first
+		currentPixel = 12; // Start at the end
+		currentStep++;
+	}
+
+	else if (currentStep == 1) {
+		fadePixelToColour(stairPixelArray[currentPixel]);
+	}
+
+	else if (currentStep == 2) {
+		if ((currentPixel - 1) <= -1) { // If we've done all the pixels
+			currentStep = 4;
+		}
+
+		else if (millis() - previousMillis >= pixelDelay) {
+			currentPixel--;
+			currentStep = 1;
+		}
+	}
+
+	else if (currentStep == 4) {
+		currentMode = 9; // stairsOn
+		setAnimationDefaults(currentMode);
+		// No need to publish state as mode 10 is considered on anyway and so has already been published
+	}
+}
+
+void stairShutdown() {
+	if (currentStep == 0) {
+		// Set the target colour to off
+		rgbValueTwo[0] = 0;
+		rgbValueTwo[1] = 0;
+		rgbValueTwo[2] = 0;
+
+		currentStep++;
+	}
+
+	else if (currentStep == 1) {
+		fadePixelToColour(stairPixelArray[currentPixel]);
+	}
+
+	else if (currentStep == 2) {
+		if ((currentPixel + 1) >= stairPixelArrayLength) { // If we've done all the pixels
+			currentStep = 4;
+		}
+
+		else if (millis() - previousMillis >= pixelDelay) {
+			currentPixel++;
+			currentStep = 1;
+		}
+	}
+
+	else if (currentStep == 4) {
+		currentMode = 0; // off
+		setAnimationDefaults(currentMode);
+		publishState();
+	}
 }
 #pragma endregion
 
@@ -787,6 +933,21 @@ void setup() {
     ledArray[i][1] = 0;
     ledArray[i][2] = 0;
   }
+
+  // Initialise the stairPixelArray
+  stairPixelArray[0] = 3;
+  stairPixelArray[1] = 12;
+  stairPixelArray[2] = 21;
+  stairPixelArray[3] = 30;
+  stairPixelArray[4] = 40;
+  stairPixelArray[5] = 49;
+  stairPixelArray[6] = 58;
+  stairPixelArray[7] = 68;
+  stairPixelArray[8] = 77;
+  stairPixelArray[9] = 86;
+  stairPixelArray[10] = 96;
+  stairPixelArray[11] = 105;
+  stairPixelArray[12] = 111;
 
   // Set all global animation variables to their defaults
   resetGlobalAnimationVariables();
@@ -1006,13 +1167,14 @@ void callback(char* topic, byte* payload, unsigned int length) {
 
 void loop() {
   if (!client.connected()) {
-    digitalWrite(LED_BUILTIN, LOW);  // Turn the LED on
     reconnect();
   }
-  client.loop();
+  else {
+	  client.loop();
+  }
 
   if (currentMode == 0) {
-	if (String(deviceControlTopic).equals("switch/stairs")) { // Special On/Off Modes for Stairs
+	if (stairs == true) { // Special Off Mode for Stairs
 		stairsOff();
 	}
 	else {
@@ -1045,5 +1207,11 @@ void loop() {
   }
   else if (currentMode == 9) {
 	stairsOn();
+  }
+  else if (currentMode == 10) {
+	  stairShutdown();
+  }
+  else if (currentMode == 11) {
+	  stairStartup();
   }
 }
