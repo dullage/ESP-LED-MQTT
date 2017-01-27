@@ -29,7 +29,7 @@ char buffer[bufferSize];
 unsigned long reconnectStart = 0;
 unsigned long lastReconnectMessage = 0;
 unsigned long messageInterval = 1000;
-int currentReconnectStep = 0;
+int currentReconnectStep = 0; 
 
 // Device Specific Topics
 const char* deviceStateTopic = "switch/lamp/state";
@@ -38,6 +38,7 @@ const char* rgbStateTopic = "switch/lamp/rgb/state";
 const char* rgbControlTopic = "switch/lamp/rgb"; 
 //const char* brightnessStateTopic = "switch/lamp/brightness/state"; - Not yet implemented
 //const char* brightnessControlTopic = "switch/lamp/brightness"; - Not yet implemented
+const char* recoveryTopic = "switch/lamp/recovery";
 
 // Device specific variables (currently only used for animations specific to my stair LEDs)
 boolean stairs = false;
@@ -47,6 +48,9 @@ int stairPixelArrayLength = 13;
 // Sun Position
 const char* sunPositionTopic = "sunPosition"; // This will be sent as a retained message so will be updated upon boot
 int sunPosition = 0;
+
+// Other
+boolean recovered = false;
 
 #pragma region Global Animation Variables
 const int numModes = 11; // This is the total number of modes
@@ -122,7 +126,7 @@ void resetGlobalAnimationVariables() {
   chance = 100;
 }
 
-void setAnimationDefaults(int mode) {
+void setModeDefaults(int mode) {
 	// All Off
 		// No additional defaults
 
@@ -194,14 +198,14 @@ void setAnimationDefaults(int mode) {
 		rgbValueTwo[2] = 41;
 	}
 
-	// Stair Startup
+	// Stair Shutdown
 	else if (mode == 10) {
-		rgbValueTwo[0] = 255;
-		rgbValueTwo[1] = 147;
-		rgbValueTwo[2] = 41;
+		rgbValueTwo[0] = 0;
+		rgbValueTwo[1] = 0;
+		rgbValueTwo[2] = 0;
 	}
 
-	// Stair Shutdown
+	// Stair Startup
 	else if (mode == 11) {
 		rgbValueTwo[0] = 255;
 		rgbValueTwo[1] = 147;
@@ -289,13 +293,12 @@ void reconnect() {
 	if (currentReconnectStep == 3) {
 		digitalWrite(LED_BUILTIN, HIGH);  // Turn the LED off
 
-		// MQTT Subscriptions (Note: Colour instructions can come from either the control topic or the rgb topic...
-		// ...it's best to prioritise the control topic (although this may be incorrect) and so we subscribe to...
-		// ...the control topic last so that the retained message on that topic supersceedes others.
+		// MQTT Subscriptions
 		client.subscribe(sunPositionTopic);
 		client.subscribe(rgbControlTopic);
 		//client.subscribe(brightnessControlTopic); - Not yet implemented
 		client.subscribe(deviceControlTopic);
+		client.subscribe(recoveryTopic);
 
 		currentReconnectStep = 0; // Reset
 	}
@@ -329,10 +332,10 @@ void updateStripFromLedArray() {
 
 void publishState() {
 	if (currentMode == 0) {
-		client.publish(deviceStateTopic, "0");
+		client.publish(deviceStateTopic, "0", true);
 	}
 	else {
-		client.publish(deviceStateTopic, "1");
+		client.publish(deviceStateTopic, "1", true);
 	}
 }
 
@@ -346,9 +349,82 @@ void publishColour() {
 //	String(brightness).toCharArray(brightnessChar, 3);
 //	client.publish(brightnessStateTopic, brightnessChar);
 //}
+
+void publishRecovery() {
+	DynamicJsonBuffer jsonBuffer;				    // Reserve memory space (https://bblanchon.github.io/ArduinoJson/)
+	JsonObject& root = jsonBuffer.createObject();   // Create the JSON object
+
+	// Always publish the mode so that there is a current retained message
+	root["0"] = currentMode;
+
+	// Only publish the other variables if they are non-default
+	if (rgbValueOne[0] != 0 | rgbValueOne[1] != 0 | rgbValueOne[2] != 0) {
+		JsonArray& rgbValueOneArray = root.createNestedArray("1");
+		rgbValueOneArray.add(rgbValueOne[0]);
+		rgbValueOneArray.add(rgbValueOne[1]);
+		rgbValueOneArray.add(rgbValueOne[2]);
+	}
+
+	if (rgbValueTwo[0] != 255 | rgbValueTwo[1] != 255 | rgbValueTwo[2] != 255) {
+		JsonArray& rgbValueTwoArray = root.createNestedArray("2");
+		rgbValueTwoArray.add(rgbValueTwo[0]);
+		rgbValueTwoArray.add(rgbValueTwo[1]);
+		rgbValueTwoArray.add(rgbValueTwo[2]);
+	}
+
+	if (colourDelay != 0) {
+		root["3"] = colourDelay;
+	}
+
+	if (colourJump != 1) {
+		root["4"] = colourJump;
+	}
+
+	if (pixelDelay != 0) {
+		root["5"] = pixelDelay;
+	}
+
+	if (pixelJump != 0) {
+		root["6"] = pixelJump;
+	}
+
+	if (randomise != false) {
+		root["7"] = randomise;
+	}
+
+	if (loopDelay != 0) {
+		root["8"] = loopDelay;
+	}
+
+	if (highPixelDelay != 0) {
+		root["9"] = highPixelDelay;
+	}
+
+	if (multiplier != 1) {
+		root["10"] = multiplier;
+	}
+
+	if (chance != 100) {
+		root["11"] = chance;
+	}
+
+	if (trailLength != 0) {
+		root["12"] = trailLength;
+	}
+
+	char buffer[256];
+	root.printTo(buffer, sizeof(buffer));
+	client.publish(recoveryTopic, buffer, true);
+}
+
+void publishAll() {
+	publishColour();
+	publishState();
+	publishRecovery();
+}
 #pragma endregion
 
-#pragma region Animations
+#pragma region Modes
 void allRgbValueOne() {
   if (flipFlop == 0) { // This isn't used
     updateLedArray_singleColour(rgbValueOne);
@@ -498,7 +574,6 @@ void strobe() {
   }
 }
 
-// Source: https://www.tweaking4all.com/hardware/arduino/adruino-led-strip-effects/#fire
 void fire(int Cooling, int Sparking, int SpeedDelay) { // Need to tailor variables and update LED array
   static byte heat[NUMPIXELS];
   int cooldown;
@@ -551,6 +626,7 @@ void setPixelHeatColor (int Pixel, byte temperature) {
     pixels.setPixelColor(Pixel, heatramp, 0, 0);
   }
 }
+// Fire Source: https://www.tweaking4all.com/hardware/arduino/adruino-led-strip-effects/#fire
 
 void colourPhase() {
   if (flipFlop == 1) { // fadeToColour will set flipFlop to 1 when complete so we use this to update the current step then reset the flipFlop
@@ -632,11 +708,11 @@ void sparkle() {
     if (ledArray[currentPixel][0] != rgbValueTwo[0] | ledArray[currentPixel][1] != rgbValueTwo[1] | ledArray[currentPixel][2] != rgbValueTwo[2]) {   // If the pixel hasn't reached peak
       for (int i = 1;!(i > colourJump);i++) {
         for (int col = 0;col < 3;col++) {                                                                         // For each colour
-          if (ledArray[currentPixel][col] < rgbValueTwo[col]) {                                                                      // If the colour value is less that it should be
-            ledArray[currentPixel][col] += 1;                                                                                  // Add 1
+          if (ledArray[currentPixel][col] < rgbValueTwo[col]) {                                                   // If the colour value is less that it should be
+            ledArray[currentPixel][col] += 1;                                                                     // Add 1
           }
-          else if (ledArray[currentPixel][col] > rgbValueTwo[col]) {                                                               // If the colour value is more that it should be
-            ledArray[currentPixel][col] -= 1;                                                                                // Subtract 1
+          else if (ledArray[currentPixel][col] > rgbValueTwo[col]) {                                              // If the colour value is more that it should be
+            ledArray[currentPixel][col] -= 1;                                                                     // Subtract 1
           }
         }
       }
@@ -653,11 +729,11 @@ void sparkle() {
     if (ledArray[currentPixel][0] != rgbValueOne[0] | ledArray[currentPixel][1] != rgbValueOne[1] | ledArray[currentPixel][2] != rgbValueOne[2]) {   // If the pixel hasn't reached base
       for (int i = 1;!(i > colourJump);i++) {
         for (int col = 0;col < 3;col++) {                                                                         // For each colour
-          if (ledArray[currentPixel][col] < rgbValueOne[col]) {                                                                      // If the colour value is less that it should be
-            ledArray[currentPixel][col] += 1;                                                                                  // Add 1
+          if (ledArray[currentPixel][col] < rgbValueOne[col]) {                                                   // If the colour value is less that it should be
+            ledArray[currentPixel][col] += 1;                                                                     // Add 1
           }
-          else if (ledArray[currentPixel][col] > rgbValueOne[col]) {                                                               // If the colour value is more that it should be
-            ledArray[currentPixel][col] -= 1;                                                                                // Subtract 1
+          else if (ledArray[currentPixel][col] > rgbValueOne[col]) {                                              // If the colour value is more that it should be
+            ledArray[currentPixel][col] -= 1;                                                                     // Subtract 1
           }
         }
       }
@@ -748,11 +824,11 @@ void shoot() {
 		if (ledArray[currentPixel][0] != rgbValueTwo[0] | ledArray[currentPixel][1] != rgbValueTwo[1] | ledArray[currentPixel][2] != rgbValueTwo[2]) {   // If the pixel hasn't reached peak
 			for (int i = 1; !(i > colourJump); i++) {
 				for (int col = 0; col < 3; col++) {                                                                         // For each colour
-					if (ledArray[currentPixel][col] < rgbValueTwo[col]) {                                                                      // If the colour value is less that it should be
-						ledArray[currentPixel][col] += 1;                                                                                  // Add 1
+					if (ledArray[currentPixel][col] < rgbValueTwo[col]) {                                                   // If the colour value is less that it should be
+						ledArray[currentPixel][col] += 1;                                                                   // Add 1
 					}
-					else if (ledArray[currentPixel][col] > rgbValueTwo[col]) {                                                               // If the colour value is more that it should be
-						ledArray[currentPixel][col] -= 1;                                                                                // Subtract 1
+					else if (ledArray[currentPixel][col] > rgbValueTwo[col]) {                                              // If the colour value is more that it should be
+						ledArray[currentPixel][col] -= 1;                                                                   // Subtract 1
 					}
 				}
 			}
@@ -779,11 +855,11 @@ if (currentStep == 5 && (currentMillis - previousMillis >= colourDelay)) {
 		if (ledArray[currentPixel][0] != rgbValueOne[0] | ledArray[currentPixel][1] != rgbValueOne[1] | ledArray[currentPixel][2] != rgbValueOne[2]) {   // If the pixel hasn't reached base
 			for (int i = 1; !(i > colourJump); i++) {
 				for (int col = 0; col < 3; col++) {                                                                         // For each colour
-					if (ledArray[currentPixel][col] < rgbValueOne[col]) {                                                                      // If the colour value is less that it should be
-						ledArray[currentPixel][col] += 1;                                                                                  // Add 1
+					if (ledArray[currentPixel][col] < rgbValueOne[col]) {                                                   // If the colour value is less that it should be
+						ledArray[currentPixel][col] += 1;                                                                   // Add 1
 					}
-					else if (ledArray[currentPixel][col] > rgbValueOne[col]) {                                                               // If the colour value is more that it should be
-						ledArray[currentPixel][col] -= 1;                                                                                // Subtract 1
+					else if (ledArray[currentPixel][col] > rgbValueOne[col]) {                                              // If the colour value is more that it should be
+						ledArray[currentPixel][col] -= 1;                                                                   // Subtract 1
 					}
 				}
 			}
@@ -850,7 +926,7 @@ if (currentStep == 5 && (currentMillis - previousMillis >= colourDelay)) {
 
 void stairStartup() {
 	if (currentStep == 0) {
-		//allRgbValueOne(); // Turn all the lights off first
+		allRgbValueOne(); // Turn all the lights off first
 		currentPixel = 12; // Start at the end
 		currentStep++;
 	}
@@ -872,40 +948,34 @@ void stairStartup() {
 
 	else if (currentStep == 4) {
 		currentMode = 9; // stairsOn
-		setAnimationDefaults(currentMode);
+		setModeDefaults(currentMode);
+		
 		// No need to publish state as mode 10 is considered on anyway and so has already been published
+		publishColour();
+		publishRecovery();
 	}
 }
 
 void stairShutdown() {
 	if (currentStep == 0) {
-		// Set the target colour to off
-		rgbValueTwo[0] = 0;
-		rgbValueTwo[1] = 0;
-		rgbValueTwo[2] = 0;
-
-		currentStep++;
-	}
-
-	else if (currentStep == 1) {
 		fadePixelToColour(stairPixelArray[currentPixel]);
 	}
 
-	else if (currentStep == 2) {
+	else if (currentStep == 1) {
 		if ((currentPixel + 1) >= stairPixelArrayLength) { // If we've done all the pixels
-			currentStep = 4;
+			currentStep = 2;
 		}
 
 		else if (millis() - previousMillis >= pixelDelay) {
 			currentPixel++;
-			currentStep = 1;
+			currentStep = 0;
 		}
 	}
 
-	else if (currentStep == 4) {
-		currentMode = 0; // off
-		setAnimationDefaults(currentMode);
-		publishState();
+	else if (currentStep == 2) {
+		currentMode = 0; // Off
+		setModeDefaults(currentMode);
+		publishAll();
 	}
 }
 #pragma endregion
@@ -954,7 +1024,7 @@ void setup() {
 }
 
 void callback(char* topic, byte* payload, unsigned int length) {
-  Serial.println("------------------- MQTT Recieved -------------------");
+  Serial.println("> MQTT Recieved");
 
 #pragma region deviceControlTopic
   if (String(deviceControlTopic).equals(topic)) {
@@ -962,24 +1032,20 @@ void callback(char* topic, byte* payload, unsigned int length) {
 		  // Off
 		  if ((char)payload[0] == '0') {
 			  resetGlobalAnimationVariables();
-			  currentMode = 0; // Not required, for clarity
-			  setAnimationDefaults(currentMode);
+			  currentMode = 0; // Not required as 0 is set by the reset, left in for clarity
+			  setModeDefaults(currentMode);
 			  publishState();
+			  publishRecovery();
 		  }
 		  // On
 		  else if ((char)payload[0] == '1') {
-			  int previousMode = currentMode;
-			  if (previousMode == 0) {
+			  // Only turn on if currentMode is 0
+			  if (currentMode == 0) {
 				  resetGlobalAnimationVariables();
+				  currentMode = 1;
+				  setModeDefaults(currentMode);
+				  publishAll(); // State + Colour + Recovery
 			  }
-			  
-			  currentMode = 1;
-			  
-			  if (previousMode == 0) {
-				  setAnimationDefaults(currentMode);
-			  }
-
-			  publishState();
 		  }
 		  // Toggle - Using a re-publish ensures any changes to the On / Off routines are used for the toggle as well
 		  else if ((char)payload[0] == '2') {
@@ -1002,32 +1068,32 @@ void callback(char* topic, byte* payload, unsigned int length) {
 				  currentMode = 0;
 			  }
 
-			  setAnimationDefaults(currentMode);
-			  publishState();
+			  setModeDefaults(currentMode);
+			  publishAll();
 		  }
 	  }
 
-	  else if ((char)payload[0] == '{') {     // It's a JSON
-		  char message_buff[200];               // Max of 200 characters
+	  else if ((char)payload[0] == '{') {       // It's a JSON
+		  char message_buff[256];               // Max of 256 characters
 		  for (int i = 0; i < length; i++) {
 			  message_buff[i] = payload[i];
-			  if (i == (length - 1)) {            // If we're at the last character
-				  message_buff[i + 1] = '\0';       // Add a string terminator to the next character
+			  if (i == (length - 1)) {          // If we're at the last character
+				  message_buff[i + 1] = '\0';   // Add a string terminator to the next character
 			  }
-		  }
-		  StaticJsonBuffer<300> jsonBuffer;     // Step 1: Reserve memory space (https://bblanchon.github.io/ArduinoJson/)
+		  }  
+		  DynamicJsonBuffer jsonBuffer;                            // Step 1: Reserve memory space (https://bblanchon.github.io/ArduinoJson/)
 		  JsonObject& root = jsonBuffer.parseObject(message_buff); // Step 2: Deserialize the JSON string
 
 		  if (!root.success()) {
 			  Serial.println("parseObject() failed");
 		  }
 		  else if (root.success()) {
-			  Serial.println("Root Success");
-
 			  if (root.containsKey("0")) {
 				  resetGlobalAnimationVariables(); // Only do this if the mode changes
 				  currentMode = root["0"];
-				  setAnimationDefaults(currentMode); // Only do this if the mode changes
+				  setModeDefaults(currentMode); // Only do this if the mode changes
+				  
+				  // We don't publish the recovery message here as other variables might have changed without the mode changing and so we wait until later
 				  publishState();
 				  publishColour();
 			  }
@@ -1089,6 +1155,8 @@ void callback(char* topic, byte* payload, unsigned int length) {
 			  }
 
 		  }
+
+		  publishRecovery();
 	  }
   }
 #pragma endregion
@@ -1127,7 +1195,9 @@ void callback(char* topic, byte* payload, unsigned int length) {
 			rgbValueTwo[2] = rgb_blue;
 		}
 
+		// No need to publish the state, it can't have changed.
 		publishColour();
+		publishRecovery();
 	}
 #pragma endregion
 
@@ -1160,6 +1230,92 @@ void callback(char* topic, byte* payload, unsigned int length) {
 		else if ((char)payload[0] == '1') {
 			sunPosition = 1;
 		}
+	}
+#pragma endregion
+
+#pragma region recoveryTopic
+	else if (String(recoveryTopic).equals(topic) && recovered == false) {
+		char message_buff[256];
+		for (int i = 0; i < length; i++) {
+			message_buff[i] = payload[i];
+			if (i == (length - 1)) {              // If we're at the last character
+				message_buff[i + 1] = '\0';       // Add a string terminator to the next character
+			}
+		}
+		StaticJsonBuffer<300> jsonBuffer;							// Reserve memory space (https://bblanchon.github.io/ArduinoJson/)
+		JsonObject& root = jsonBuffer.parseObject(message_buff);    // Step 2: Deserialize the JSON string
+
+		if (!root.success()) {
+			Serial.println("parseObject() failed");
+		}
+		else if (root.success()) {
+			if (root.containsKey("0")) {
+				currentMode = root["0"];
+				setModeDefaults(currentMode); // Only do this if the mode changes
+			}
+			if (currentMode > numModes) { // If mode is greater than is possible, set to 0
+				currentMode = 0;
+			}
+
+			if (root.containsKey("1")) {
+				rgbValueOne[0] = root["1"][0];
+				rgbValueOne[1] = root["1"][1];
+				rgbValueOne[2] = root["1"][2];
+			}
+
+			if (root.containsKey("2")) {
+				rgbValueTwo[0] = root["2"][0];
+				rgbValueTwo[1] = root["2"][1];
+				rgbValueTwo[2] = root["2"][2];
+				publishColour();
+			}
+
+			if (root.containsKey("3")) {
+				colourDelay = root["3"];
+			}
+
+			if (root.containsKey("4")) {
+				colourJump = root["4"];
+			}
+
+			if (root.containsKey("5")) {
+				pixelDelay = root["5"];
+			}
+
+			if (root.containsKey("6")) {
+				pixelJump = root["6"];
+			}
+
+			if (root.containsKey("7")) {
+				randomise = root["7"];
+			}
+
+			if (root.containsKey("8")) {
+				loopDelay = root["8"];
+			}
+
+			if (root.containsKey("9")) {
+				highPixelDelay = root["9"];
+			}
+
+			if (root.containsKey("10")) {
+				multiplier = root["10"];
+			}
+
+			if (root.containsKey("11")) {
+				chance = root["11"];
+			}
+
+			if (root.containsKey("12")) {
+				trailLength = root["12"];
+			}
+
+			// No need to publish recovery message as it would match the current settings anyway
+			publishState();
+			publishColour();
+		}
+
+		recovered = true;
 	}
 #pragma endregion
 

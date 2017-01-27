@@ -4,12 +4,23 @@ Allows the WiFi control of a WS8212 LED strip using an ESP8266 controller and an
 To use this code simply configure the PIN and NUMPIXELS variables in the NeoPixel section. You will also need to configure the credentials for your WiFi and MQTT broker, see <REDACTED> code. Lastly you can tailor the MQTT topics as requried.
 
 ## Features
-* Works well with Home Assistant
-* Includes 7 animations
-* Basic control using simple MQTT commands (e.g. "1" to turn on)
-* Advanced control using JSON MQTT commands
-* Tweak animation variables without needing to alter code
-* Utilizes a non-blocking reconnect function allowing animations to continue if MQTT or WiFi connection is lost
+* Works well with Home Assistant.
+* Includes 7 animations.
+* Basic control using simple MQTT commands (e.g. "1" to turn on, "0" to turn off).
+* Advanced control using JSON MQTT commands.
+* Tweak animation variables without needing to alter code.
+* Utilizes a non-blocking reconnect function allowing animations to continue if MQTT or WiFi connection is lost.
+* Automatic Recovery - All varables are published as a retained message to a recovery topic. If the ESP is restarted this message is used to return to the previous state.
+* Retained Statuses - The state is published as a retained message allowing your hub (e.g. Home Assistant) to grab the current state if it is restarted.
+
+## Dependencies
+The following libraries are required and so must be present when compiling.
+
+* Arduino
+* ESP8266WiFi
+* PubSubClient
+* Adafruit_NeoPixel
+* ArduinoJson
 
 ## Transmission Codes
 | Code | Message |
@@ -29,7 +40,7 @@ The message below would turn all LEDs to Blue (Mode = 1, rgbColourTwo = Blue). S
 | Code | Variable |
 |---|---|
 | 0 | currentMode |
-| 1 | rgbVaueOne |
+| 1 | rgbValueOne |
 | 2 | rgbValueTwo |
 | 3 | colourDelay |
 | 4 | colourJump |
@@ -70,7 +81,7 @@ Basic control of light.
   rgb_command_topic: "switch/lamp/rgb"
   payload_off: "0"
   payload_on: "1"
-  retain: true
+  retain: false
 ```
 
 **input_select:**
@@ -94,42 +105,12 @@ lamp:
 ```
 
 **automation:**
-Sends the appropriate MQTT command when an animation is selected.
+Sends the appropriate MQTT command when a mode is selected and then returns the input select back to 'Select...'
 ```
-- alias: "Lamp Animation"
+- alias: "Lamp Mode"
   trigger:
     platform: state
-    entity_id: input_select.lamp
-  condition:
-    condition: or
-    conditions:
-      - condition: state
-        entity_id: input_select.lamp
-        state: 'Warm Light'
-      - condition: state
-        entity_id: input_select.lamp
-        state: 'Strobe'
-      - condition: state
-        entity_id: input_select.lamp
-        state: 'Fire'
-      - condition: state
-        entity_id: input_select.lamp
-        state: 'Colour Phase'
-      - condition: state
-        entity_id: input_select.lamp
-        state: 'Sparkle'
-      - condition: state
-        entity_id: input_select.lamp
-        state: 'Shoot / Drip'
-      - condition: state
-        entity_id: input_select.lamp
-        state: 'Rain'      
-      - condition: state
-        entity_id: input_select.lamp
-        state: 'Startup'
-      - condition: state
-        entity_id: input_select.lamp
-        state: 'Shutdown'        
+    entity_id: input_select.lamp       
   action:
     - service: mqtt.publish
       data_template:
@@ -158,22 +139,9 @@ Sends the appropriate MQTT command when an animation is selected.
           {% else %}
             {}
           {% endif %}
-        retain: true
+        retain: false
+    - service: input_select.select_option
+      data:
+        entity_id: input_select.stairlamp_mode
+        option: 'Select...'
 ```
-
-It's also useful to switch the input_select back to "Select..." when a simple on or off is sent.
-```
-- alias: lamp input select reset
-  trigger:
-    - platform: mqtt
-      topic: switch/lamp
-      payload: '1'
-    - platform: mqtt
-      topic: switch/lamp
-      payload: '0'
-  action:
-    service: input_select.select_option
-    data:
-      entity_id: input_select.lamp
-      option: 'Select...'
-``` 
