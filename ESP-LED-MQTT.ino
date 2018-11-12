@@ -6,7 +6,7 @@
 
 // Neopixel
 #define PIN            3
-#define NUMPIXELS      30
+#define NUMPIXELS      42
 Adafruit_NeoPixel pixels = Adafruit_NeoPixel(NUMPIXELS, PIN, NEO_GRB + NEO_KHZ800);
 int ledArray[NUMPIXELS][3]; // Custom array to allow us to buffer changes before sending them
 
@@ -29,16 +29,18 @@ char buffer[bufferSize];
 unsigned long reconnectStart = 0;
 unsigned long lastReconnectMessage = 0;
 unsigned long messageInterval = 1000;
-int currentReconnectStep = 0; 
+int currentReconnectStep = 0;
+boolean offlineMode = true;
 
 // Device Specific Topics
-const char* deviceStateTopic = "switch/lamp/state";
-const char* deviceControlTopic = "switch/lamp";   
-const char* rgbStateTopic = "switch/lamp/rgb/state"; 
-const char* rgbControlTopic = "switch/lamp/rgb"; 
-//const char* brightnessStateTopic = "switch/lamp/brightness/state"; - Not yet implemented
-//const char* brightnessControlTopic = "switch/lamp/brightness"; - Not yet implemented
-const char* recoveryTopic = "switch/lamp/recovery";
+const char* deviceAvailabilityTopic = "light/kitchen_right/availability";
+const char* deviceStateTopic = "light/kitchen_right/state";
+const char* deviceControlTopic = "light/kitchen_right";
+const char* rgbStateTopic = "light/kitchen_right/rgb/state";
+const char* rgbControlTopic = "light/kitchen_right/rgb";
+//const char* brightnessStateTopic = "light/kitchen_right/brightness/state"; - Not yet implemented
+//const char* brightnessControlTopic = "light/kitchen_right/brightness"; - Not yet implemented
+const char* recoveryTopic = "light/kitchen_right/recovery";
 
 // Device specific variables (currently only used for animations specific to my stair LEDs)
 boolean stairs = false;
@@ -200,7 +202,7 @@ void setModeDefaults(int mode) {
 
 	// Stair Shutdown
 	else if (mode == 10) {
-		rgbValueTwo[0] = 0;
+		rgbValueTwo[0] = 255;
 		rgbValueTwo[1] = 0;
 		rgbValueTwo[2] = 0;
 	}
@@ -214,14 +216,27 @@ void setModeDefaults(int mode) {
 }
 
 void reconnect() {
-	// IF statements used instead of IF ELSE to complete process in single loop if possible
-
+	// IF statements used to complete process in single loop if possible
+  
 	// 0 - Turn the LED on and log the reconnect start time
 	if (currentReconnectStep == 0) {
 		digitalWrite(LED_BUILTIN, LOW);
 		reconnectStart = millis();
 		currentReconnectStep++;
+
+   // If the ESP is reconnecting after a connection failure then wait a second before starting the reconnect routine
+    if (offlineMode == false) {
+      delay(1000);
+    }
 	}
+
+  // If we've previously had a connection and have been trying to connect for more than 2 minutes then restart the ESP.
+  // We don't do this if we've never had a connection as that means the issue isn't temporary and we don't want the relay
+  // to turn off every 2 minutes.
+  if (offlineMode == false && ((millis() - reconnectStart) > 120000)) {
+    Serial.println("Restarting!");
+    ESP.restart();
+  }
 
 	// 1 - Check WiFi Connection
 	if (currentReconnectStep == 1) {
@@ -258,7 +273,7 @@ void reconnect() {
 
 				String clientId = "ESP8266Client-";
 				clientId += String(random(0xffff), HEX);
-				client.connect(clientId.c_str(), mqttUser, mqttPass);
+				client.connect(clientId.c_str(), mqttUser, mqttPass, deviceAvailabilityTopic, 0, true, "0");
 			}
 
 			// Check the MQTT again and go forward if necessary
@@ -274,11 +289,6 @@ void reconnect() {
 			else if (WiFi.status() != WL_CONNECTED) {
 				currentReconnectStep = 1;
 			}
-
-			// If we've been trying to connect for more than 2 minutes then restart the ESP
-			else if ((millis() - reconnectStart) > 120000) {
-				ESP.restart();
-			}
 		}
 		else {
 			Serial.println("MQTT connected!");
@@ -293,12 +303,20 @@ void reconnect() {
 	if (currentReconnectStep == 3) {
 		digitalWrite(LED_BUILTIN, HIGH);  // Turn the LED off
 
+    client.publish(deviceAvailabilityTopic, "1", true);
+
 		// MQTT Subscriptions
 		client.subscribe(sunPositionTopic);
 		client.subscribe(rgbControlTopic);
 		//client.subscribe(brightnessControlTopic); - Not yet implemented
 		client.subscribe(deviceControlTopic);
 		client.subscribe(recoveryTopic);
+
+    if (offlineMode == true) {
+      offlineMode = false;
+      Serial.println("Offline Mode Deactivated");
+      Serial.println("");
+    }
 
 		currentReconnectStep = 0; // Reset
 	}
@@ -527,7 +545,7 @@ void fadeToColour(bool useFlipFlop = false) {
   }
 }
 
-void fadePixelToColour(int pixelNo) {
+void fadePixelToTargetColour(int pixelNo) {
 	if (millis() - previousMillis >= colourDelay) {
 		if (ledArray[pixelNo][0] != rgbValueTwo[0] | ledArray[pixelNo][1] != rgbValueTwo[1] | ledArray[pixelNo][2] != rgbValueTwo[2]) {
 
@@ -542,6 +560,36 @@ void fadePixelToColour(int pixelNo) {
 					ledArray[pixelNo][colour] -= colourJump;                // Subtract the colour jump
 					if (ledArray[pixelNo][colour] < rgbValueTwo[colour]) {  // Jump back if we've jumped under it
 						ledArray[pixelNo][colour] = rgbValueTwo[colour];
+					}
+				}
+			}
+
+			pixels.setPixelColor(pixelNo, pixels.Color(ledArray[pixelNo][0], ledArray[pixelNo][1], ledArray[pixelNo][2]));
+			pixels.show();
+		}
+		else {
+			currentStep++;
+		}
+
+		previousMillis = millis();
+	}
+}
+
+void fadePixelToBaseColour(int pixelNo) {
+	if (millis() - previousMillis >= colourDelay) {
+		if (ledArray[pixelNo][0] != rgbValueOne[0] | ledArray[pixelNo][1] != rgbValueOne[1] | ledArray[pixelNo][2] != rgbValueOne[2]) {
+
+			for (int colour = 0; colour < 3; colour++) {                    // For each colour
+				if (ledArray[pixelNo][colour] < rgbValueOne[colour]) {      // If the colour value is less that it should be
+					ledArray[pixelNo][colour] += colourJump;                // Add the colour jump
+					if (ledArray[pixelNo][colour] > rgbValueOne[colour]) {  // Jump back if we've jumped over it
+						ledArray[pixelNo][colour] = rgbValueOne[colour];
+					}
+				}
+				else if (ledArray[pixelNo][colour] > rgbValueOne[colour]) { // If the colour value is more that it should be
+					ledArray[pixelNo][colour] -= colourJump;                // Subtract the colour jump
+					if (ledArray[pixelNo][colour] < rgbValueOne[colour]) {  // Jump back if we've jumped under it
+						ledArray[pixelNo][colour] = rgbValueOne[colour];
 					}
 				}
 			}
@@ -932,7 +980,7 @@ void stairStartup() {
 	}
 
 	else if (currentStep == 1) {
-		fadePixelToColour(stairPixelArray[currentPixel]);
+		fadePixelToTargetColour(stairPixelArray[currentPixel]);
 	}
 
 	else if (currentStep == 2) {
@@ -957,22 +1005,27 @@ void stairStartup() {
 }
 
 void stairShutdown() {
+	// This step fades the top LED to red to indicate shutdown
 	if (currentStep == 0) {
-		fadePixelToColour(stairPixelArray[currentPixel]);
+		fadePixelToTargetColour(111);
+	}
+	
+	else if (currentStep == 1) {
+		fadePixelToBaseColour(stairPixelArray[currentPixel]);
 	}
 
-	else if (currentStep == 1) {
+	else if (currentStep == 2) {
 		if ((currentPixel + 1) >= stairPixelArrayLength) { // If we've done all the pixels
-			currentStep = 2;
+			currentStep = 3;
 		}
 
 		else if (millis() - previousMillis >= pixelDelay) {
 			currentPixel++;
-			currentStep = 0;
+			currentStep = 1;
 		}
 	}
 
-	else if (currentStep == 2) {
+	else if (currentStep == 3) {
 		currentMode = 0; // Off
 		setModeDefaults(currentMode);
 		publishAll();
@@ -1370,4 +1423,6 @@ void loop() {
   else if (currentMode == 11) {
 	  stairStartup();
   }
+
+  yield();
 }
