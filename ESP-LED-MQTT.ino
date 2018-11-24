@@ -6,7 +6,7 @@
 
 // Neopixel
 #define PIN            3
-#define NUMPIXELS      42
+#define NUMPIXELS      41
 Adafruit_NeoPixel pixels = Adafruit_NeoPixel(NUMPIXELS, PIN, NEO_GRB + NEO_KHZ800);
 int ledArray[NUMPIXELS][3]; // Custom array to allow us to buffer changes before sending them
 
@@ -33,16 +33,14 @@ int currentReconnectStep = 0;
 boolean offlineMode = true;
 
 // Device Specific Topics
-const char* deviceAvailabilityTopic = "light/kitchen_right/availability";
-const char* deviceStateTopic = "light/kitchen_right/state";
-const char* deviceControlTopic = "light/kitchen_right";
-const char* rgbStateTopic = "light/kitchen_right/rgb/state";
-const char* rgbControlTopic = "light/kitchen_right/rgb";
-//const char* brightnessStateTopic = "light/kitchen_right/brightness/state"; - Not yet implemented
-//const char* brightnessControlTopic = "light/kitchen_right/brightness"; - Not yet implemented
-const char* recoveryTopic = "light/kitchen_right/recovery";
+const char* commandlTopic = "light/kitchen_left";
+const char* stateTopic = "light/kitchen_left/state";
+const char* rgbCommandTopic = "light/kitchen_left/rgb";
+const char* rgbStateTopic = "light/kitchen_left/rgb/state";
+const char* availabilityTopic = "light/kitchen_left/availability";
+const char* recoveryTopic = "light/kitchen_left/recovery";
 
-// Device specific variables (currently only used for animations specific to my stair LEDs)
+// Device specific variables (currently only used for animations specific to my stair LEDs, leave false if you are not me)
 boolean stairs = false;
 int stairPixelArray[13];
 int stairPixelArrayLength = 13;
@@ -273,7 +271,7 @@ void reconnect() {
 
 				String clientId = "ESP8266Client-";
 				clientId += String(random(0xffff), HEX);
-				client.connect(clientId.c_str(), mqttUser, mqttPass, deviceAvailabilityTopic, 0, true, "0");
+				client.connect(clientId.c_str(), mqttUser, mqttPass, availabilityTopic, 0, true, "0");
 			}
 
 			// Check the MQTT again and go forward if necessary
@@ -303,13 +301,12 @@ void reconnect() {
 	if (currentReconnectStep == 3) {
 		digitalWrite(LED_BUILTIN, HIGH);  // Turn the LED off
 
-    client.publish(deviceAvailabilityTopic, "1", true);
+    client.publish(availabilityTopic, "1", true);
 
 		// MQTT Subscriptions
 		client.subscribe(sunPositionTopic);
-		client.subscribe(rgbControlTopic);
-		//client.subscribe(brightnessControlTopic); - Not yet implemented
-		client.subscribe(deviceControlTopic);
+		client.subscribe(rgbCommandTopic);
+		client.subscribe(commandlTopic);
 		client.subscribe(recoveryTopic);
 
     if (offlineMode == true) {
@@ -350,10 +347,10 @@ void updateStripFromLedArray() {
 
 void publishState() {
 	if (currentMode == 0) {
-		client.publish(deviceStateTopic, "0", true);
+		client.publish(stateTopic, "0", true);
 	}
 	else {
-		client.publish(deviceStateTopic, "1", true);
+		client.publish(stateTopic, "1", true);
 	}
 }
 
@@ -361,12 +358,6 @@ void publishColour() {
 	snprintf(buffer, bufferSize, "%d,%d,%d", rgbValueTwo[0], rgbValueTwo[1], rgbValueTwo[2]);
 	client.publish(rgbStateTopic, buffer);
 }
-
-//void publishBrightness() { - Not yet implemented
-//	char brightnessChar[3];
-//	String(brightness).toCharArray(brightnessChar, 3);
-//	client.publish(brightnessStateTopic, brightnessChar);
-//}
 
 void publishRecovery() {
 	DynamicJsonBuffer jsonBuffer;				    // Reserve memory space (https://bblanchon.github.io/ArduinoJson/)
@@ -402,7 +393,7 @@ void publishRecovery() {
 		root["5"] = pixelDelay;
 	}
 
-	if (pixelJump != 0) {
+	if (pixelJump != 1) {
 		root["6"] = pixelJump;
 	}
 
@@ -444,16 +435,18 @@ void publishAll() {
 
 #pragma region Modes
 void allRgbValueOne() {
-  if (flipFlop == 0) { // This isn't used
+  if (flipFlop == 0) { // This is used
     updateLedArray_singleColour(rgbValueOne);
     updateStripFromLedArray();
+    flipFlop = 1;
   }
 }
 
 void allRgbValueTwo() {
-  if (flipFlop == 0) { // This isn't used
+  if (flipFlop == 0) { // This is used
     updateLedArray_singleColour(rgbValueTwo);
     updateStripFromLedArray();
+    flipFlop = 1;
   }
 }
 
@@ -515,7 +508,7 @@ void stairsOff() {
 }
 
 void fadeToColour(bool useFlipFlop = false) {
-  if (flipFlop == 0) { // This isn't used
+  if (flipFlop == 0) { // This is used
     unsigned long currentMillis = millis();
     if (currentMillis - previousMillis >= colourDelay) {
       int count = 0; // Reset the count
@@ -686,21 +679,18 @@ void colourPhase() {
   }
   
   if (currentStep == 0) {
-    //Serial.println("0");
     rgbValueTwo[0] = 255;
     rgbValueTwo[1] = 0;
     rgbValueTwo[2] = 0;
     fadeToColour(true);
   }
   else if (currentStep == 1) {
-    //Serial.println("1");
     rgbValueTwo[0] = 255;
     rgbValueTwo[1] = 255;
     rgbValueTwo[2] = 0;
     fadeToColour(true);
   }
   else if (currentStep == 2) {
-    //Serial.println("2");
     rgbValueTwo[0] = 0;
     rgbValueTwo[1] = 255;
     rgbValueTwo[2] = 0;
@@ -1041,7 +1031,6 @@ void setup() {
 
   pixels.begin(); // This initializes the NeoPixel library.
   pixels.setBrightness(brightness);
-  //publishBrightness(); - Not yet implemented
   pixels.show();
 
   WiFi.mode(WIFI_STA);
@@ -1077,10 +1066,10 @@ void setup() {
 }
 
 void callback(char* topic, byte* payload, unsigned int length) {
-  Serial.println("> MQTT Recieved");
+  Serial.println("> MQTT Received");
 
-#pragma region deviceControlTopic
-  if (String(deviceControlTopic).equals(topic)) {
+#pragma region commandlTopic
+  if (String(commandlTopic).equals(topic)) {
 	  if (length == 1) {
 		  // Off
 		  if ((char)payload[0] == '0') {
@@ -1103,10 +1092,10 @@ void callback(char* topic, byte* payload, unsigned int length) {
 		  // Toggle - Using a re-publish ensures any changes to the On / Off routines are used for the toggle as well
 		  else if ((char)payload[0] == '2') {
 			  if (currentMode == 0) {
-				  client.publish(deviceControlTopic, "1");
+				  client.publish(commandlTopic, "1");
 			  }
 			  else {
-				  client.publish(deviceControlTopic, "0"); 
+				  client.publish(commandlTopic, "0"); 
 			  }
 		  }
 		  // Cycle Modes
@@ -1158,12 +1147,14 @@ void callback(char* topic, byte* payload, unsigned int length) {
 				  rgbValueOne[0] = root["1"][0];
 				  rgbValueOne[1] = root["1"][1];
 				  rgbValueOne[2] = root["1"][2];
+                  flipFlop = 0; // When displaying a static colour this is set to 1 once the LED strip has been updated, resetting this to 0 is needed to trigger the strip update again now the colour has changed.
 			  }
 
 			  if (root.containsKey("2")) {
 				  rgbValueTwo[0] = root["2"][0];
 				  rgbValueTwo[1] = root["2"][1];
 				  rgbValueTwo[2] = root["2"][2];
+                  flipFlop = 0; // When displaying a static colour this is set to 1 once the LED strip has been updated, resetting this to 0 is needed to trigger the strip update again now the colour has changed.
 				  publishColour();
 			  }
 
@@ -1214,8 +1205,8 @@ void callback(char* topic, byte* payload, unsigned int length) {
   }
 #pragma endregion
 
-#pragma region rgbControlTopic
-	else if (String(rgbControlTopic).equals(topic)) {
+#pragma region rgbCommandTopic
+	else if (String(rgbCommandTopic).equals(topic)) {
 		String payloadString;
 		for (uint8_t i = 0; i < length; i++) {
 			payloadString.concat((char)payload[i]);
@@ -1247,32 +1238,13 @@ void callback(char* topic, byte* payload, unsigned int length) {
 		else {
 			rgbValueTwo[2] = rgb_blue;
 		}
+        
+    flipFlop = 0; // When displaying a static colour this is set to 1 once the LED strip has been updated, resetting this to 0 is needed to trigger the strip update again now the colour has changed.
 
 		// No need to publish the state, it can't have changed.
 		publishColour();
 		publishRecovery();
 	}
-#pragma endregion
-
-#pragma region brightnessControlTopic
-	//else if (String(brightnessControlTopic).equals(topic)) {
-	//	char message_buff[3];
-	//	int i = 0;
-	//	for (i; i < length; i++) {
-	//		message_buff[i] = payload[i];
-	//	}
-	//	message_buff[i] = '\0';
-
-	//	if ((int)message_buff < 0 || (int)message_buff > 255) {
-	//		return;
-	//	}
-	//	else {
-	//		brightness = (int)message_buff;
-	//		pixels.setBrightness(brightness);
-	//		pixels.show();
-	//		publishBrightness();
-	//	}
-	//}
 #pragma endregion
 
 #pragma region sunPositionTopic
@@ -1366,6 +1338,8 @@ void callback(char* topic, byte* payload, unsigned int length) {
 			// No need to publish recovery message as it would match the current settings anyway
 			publishState();
 			publishColour();
+
+      flipFlop = 0; // When displaying a static colour this is set to 1 once the LED strip has been updated, resetting this to 0 is needed to trigger the strip update again.
 		}
 
 		recovered = true;
@@ -1383,18 +1357,18 @@ void loop() {
   }
 
   if (currentMode == 0) {
-	if (stairs == true) { // Special Off Mode for Stairs
-		stairsOff();
-	}
-	else {
-		allRgbValueOne(); // Normal
-	}
+  	if (stairs == true) { // Special Off Mode for Stairs
+  		stairsOff();
+  	}
+  	else {
+  		allRgbValueOne(); // Normal
+  	}
   }
   else if (currentMode == 1) {
-	fadeToColour();
+	fadeToColour(true);
   }
   else if (currentMode == 2) {
-    fadeToColour();
+    fadeToColour(true);
   }
   else if (currentMode == 3) {
     strobe();
@@ -1418,10 +1392,10 @@ void loop() {
 	stairsOn();
   }
   else if (currentMode == 10) {
-	  stairShutdown();
+	stairShutdown();
   }
   else if (currentMode == 11) {
-	  stairStartup();
+	stairStartup();
   }
 
   yield();

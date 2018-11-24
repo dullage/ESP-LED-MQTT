@@ -1,7 +1,7 @@
 ## Overview
 Allows the WiFi control of a WS8212 LED strip using an ESP8266 controller and an MQTT broker. Designed to work well with Home Assistant https://home-assistant.io/.
 
-To use this code simply configure the PIN and NUMPIXELS variables in the NeoPixel section. You will also need to configure the credentials for your WiFi and MQTT broker, see <REDACTED> code. Lastly you can tailor the MQTT topics as requried.
+To use this code simply configure the PIN and NUMPIXELS variables in the NeoPixel section. You will also need to configure the credentials for your WiFi and MQTT broker, see <REDACTED> code. Lastly you can tailor the MQTT topics as required.
 
 ## Features
 * Works well with Home Assistant.
@@ -10,8 +10,14 @@ To use this code simply configure the PIN and NUMPIXELS variables in the NeoPixe
 * Advanced control using JSON MQTT commands.
 * Tweak animation variables without needing to alter code.
 * Utilizes a non-blocking reconnect function allowing animations to continue if MQTT or WiFi connection is lost.
-* Automatic Recovery - All varables are published as a retained message to a recovery topic. If the ESP is restarted this message is used to return to the previous state.
+* Automatic Recovery - All variables are published as a retained message to a recovery topic. If the ESP is restarted this message is used to return to the previous state.
 * Retained Statuses - The state is published as a retained message allowing your hub (e.g. Home Assistant) to grab the current state if it is restarted.
+
+## Change Log
+21/11/2018
+* Removed brightness control WIP.
+* Limited calls to pixels.show() as some were causing a WTD reset.
+* Updated MQTT topic variable names in line with Home Assistant.
 
 ## Dependencies
 The following libraries are required and so must be present when compiling.
@@ -71,18 +77,22 @@ The message below would turn all LEDs to Blue (Mode = 1, rgbColourTwo = Blue). S
 
 ## Home Assistant Examples
 **light:**
-Basic control of light.
+Basic control of a light.
 ```
 - platform: mqtt
   name: Lamp
-  state_topic: "switch/lamp/state"
-  command_topic: "switch/lamp"
-  rgb_state_topic: "switch/lamp/rgb/state"
-  rgb_command_topic: "switch/lamp/rgb"
+  state_topic: "light/lamp/state"
+  command_topic: "light/lamp"
+  rgb_state_topic: "light/lamp/rgb/state"
+  rgb_command_topic: "light/lamp/rgb"
+  availability_topic: "light/lamp/availability"
+  payload_not_available: "0"
+  payload_available: "1"
   payload_off: "0"
   payload_on: "1"
   retain: false
 ```
+Note: The recovery topic does not need to be used in the Home Assistant config.
 
 **input_select:**
 UI to allow user to trigger an animation.
