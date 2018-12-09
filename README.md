@@ -12,12 +12,16 @@ To use this code simply configure the PIN and NUMPIXELS variables in the NeoPixe
 * Utilizes a non-blocking reconnect function allowing animations to continue if MQTT or WiFi connection is lost.
 * Automatic Recovery - All variables are published as a retained message to a recovery topic. If the ESP is restarted this message is used to return to the previous state.
 * Retained Statuses - The state is published as a retained message allowing your hub (e.g. Home Assistant) to grab the current state if it is restarted.
+* You can optionally enable ArduinoOTA to make uploading changes easier.
 
 ## Change Log
 21/11/2018
 * Removed brightness control WIP.
 * Limited calls to pixels.show() as some were causing a WTD reset.
 * Updated MQTT topic variable names in line with Home Assistant.
+
+09/12/2018
+* Added support for ArduinoOTA.
 
 ## Dependencies
 The following libraries are required and so must be present when compiling.
@@ -27,6 +31,9 @@ The following libraries are required and so must be present when compiling.
 * PubSubClient
 * Adafruit_NeoPixel
 * ArduinoJson
+* ArduinoOTA.h (if ArduinoOTA enabled)
+* WiFiUdp.h (if ArduinoOTA enabled)
+* ESP8266mDNS.h (if ArduinoOTA enabled)
 
 ## Transmission Codes
 | Code | Message |
