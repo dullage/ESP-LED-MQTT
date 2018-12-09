@@ -1,8 +1,16 @@
+// Uncomment this to enable Arduino OTA
+//#define UseOTA
+
 #include <Arduino.h>
 #include <ESP8266WiFi.h>
 #include <PubSubClient.h>
 #include <Adafruit_NeoPixel.h>
 #include <ArduinoJson.h>
+#ifdef UseOTA
+  #include <ArduinoOTA.h>
+  #include <WiFiUdp.h>
+  #include <ESP8266mDNS.h>
+#endif
 
 // Neopixel
 #define PIN            3
@@ -12,14 +20,15 @@ int ledArray[NUMPIXELS][3]; // Custom array to allow us to buffer changes before
 
 // Wifi
 WiFiClient espClient;
-char* SSID = "<REDACTED>";
-char* WiFiPassword = "<REDACTED>";
+char* SSID = "REDACTED";
+char* WiFiPassword = "REDACTED";
+char* WiFiHostname = "REDACTED";
 
 // MQTT
-const char* mqtt_server = "<REDACTED>";
-int mqtt_port = <REDACTED>;
-const char* mqttUser = "<REDACTED>";
-const char* mqttPass = "<REDACTED>";
+const char* mqtt_server = "REDACTED";
+int mqtt_port = REDACTED;
+const char* mqttUser = "REDACTED";
+const char* mqttPass = "REDACTED";
 PubSubClient client(espClient);
 
 const uint8_t bufferSize = 20;
@@ -31,14 +40,15 @@ unsigned long lastReconnectMessage = 0;
 unsigned long messageInterval = 1000;
 int currentReconnectStep = 0;
 boolean offlineMode = true;
+boolean recovered = false;
 
 // Device Specific Topics
-const char* commandlTopic = "light/kitchen_left";
-const char* stateTopic = "light/kitchen_left/state";
-const char* rgbCommandTopic = "light/kitchen_left/rgb";
-const char* rgbStateTopic = "light/kitchen_left/rgb/state";
-const char* availabilityTopic = "light/kitchen_left/availability";
-const char* recoveryTopic = "light/kitchen_left/recovery";
+const char* commandlTopic = "light/test";
+const char* stateTopic = "light/test/state";
+const char* rgbCommandTopic = "light/test/rgb";
+const char* rgbStateTopic = "light/test/rgb/state";
+const char* availabilityTopic = "light/test/availability";
+const char* recoveryTopic = "light/test/recovery";
 
 // Device specific variables (currently only used for animations specific to my stair LEDs, leave false if you are not me)
 boolean stairs = false;
@@ -48,9 +58,6 @@ int stairPixelArrayLength = 13;
 // Sun Position
 const char* sunPositionTopic = "sunPosition"; // This will be sent as a retained message so will be updated upon boot
 int sunPosition = 0;
-
-// Other
-boolean recovered = false;
 
 #pragma region Global Animation Variables
 const int numModes = 11; // This is the total number of modes
@@ -1033,6 +1040,7 @@ void setup() {
   pixels.setBrightness(brightness);
   pixels.show();
 
+  WiFi.hostname(WiFiHostname);
   WiFi.mode(WIFI_STA);
   WiFi.begin(SSID, WiFiPassword);
   
@@ -1063,6 +1071,44 @@ void setup() {
 
   // Set all global animation variables to their defaults
   resetGlobalAnimationVariables();
+
+  // OTA
+  #ifdef UseOTA
+    ArduinoOTA.setHostname(WiFiHostname);
+    
+    ArduinoOTA.onStart([]() {
+      String type;
+      if (ArduinoOTA.getCommand() == U_FLASH) {
+        type = "sketch";
+      } else { // U_SPIFFS
+        type = "filesystem";
+      }
+  
+      // NOTE: if updating SPIFFS this would be the place to unmount SPIFFS using SPIFFS.end()
+      Serial.println("Start updating " + type);
+    });
+    ArduinoOTA.onEnd([]() {
+      Serial.println("\nEnd");
+    });
+    ArduinoOTA.onProgress([](unsigned int progress, unsigned int total) {
+      Serial.printf("Progress: %u%%\r", (progress / (total / 100)));
+    });
+    ArduinoOTA.onError([](ota_error_t error) {
+      Serial.printf("Error[%u]: ", error);
+      if (error == OTA_AUTH_ERROR) {
+        Serial.println("Auth Failed");
+      } else if (error == OTA_BEGIN_ERROR) {
+        Serial.println("Begin Failed");
+      } else if (error == OTA_CONNECT_ERROR) {
+        Serial.println("Connect Failed");
+      } else if (error == OTA_RECEIVE_ERROR) {
+        Serial.println("Receive Failed");
+      } else if (error == OTA_END_ERROR) {
+        Serial.println("End Failed");
+      }
+    });
+    ArduinoOTA.begin();
+  #endif
 }
 
 void callback(char* topic, byte* payload, unsigned int length) {
@@ -1345,7 +1391,6 @@ void callback(char* topic, byte* payload, unsigned int length) {
 		recovered = true;
 	}
 #pragma endregion
-
 }
 
 void loop() {
@@ -1397,6 +1442,10 @@ void loop() {
   else if (currentMode == 11) {
 	stairStartup();
   }
+
+  #ifdef UseOTA
+    ArduinoOTA.handle();
+  #endif
 
   yield();
 }
