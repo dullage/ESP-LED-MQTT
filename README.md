@@ -22,6 +22,7 @@ To use this code simply configure the PIN and NUMPIXELS variables in the NeoPixe
 
 09/12/2018
 * Added support for ArduinoOTA.
+* Availability is now published every 30 seconds.
 
 ## Dependencies
 The following libraries are required and so must be present when compiling.

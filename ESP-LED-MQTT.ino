@@ -26,7 +26,7 @@ char* WiFiHostname = "REDACTED";
 
 // MQTT
 const char* mqtt_server = "REDACTED";
-int mqtt_port = REDACTED;
+int mqtt_port = 1883;
 const char* mqttUser = "REDACTED";
 const char* mqttPass = "REDACTED";
 PubSubClient client(espClient);
@@ -58,6 +58,10 @@ int stairPixelArrayLength = 13;
 // Sun Position
 const char* sunPositionTopic = "sunPosition"; // This will be sent as a retained message so will be updated upon boot
 int sunPosition = 0;
+
+// Other
+unsigned long availabilityPublishTimer = 0;
+int availabilityPublishInterval = 30000;
 
 #pragma region Global Animation Variables
 const int numModes = 11; // This is the total number of modes
@@ -308,7 +312,7 @@ void reconnect() {
 	if (currentReconnectStep == 3) {
 		digitalWrite(LED_BUILTIN, HIGH);  // Turn the LED off
 
-    client.publish(availabilityTopic, "1", true);
+    publishAvailability();
 
 		// MQTT Subscriptions
 		client.subscribe(sunPositionTopic);
@@ -366,8 +370,12 @@ void publishColour() {
 	client.publish(rgbStateTopic, buffer);
 }
 
+void publishAvailability() {
+  client.publish(availabilityTopic, "1", true);
+}
+
 void publishRecovery() {
-	DynamicJsonBuffer jsonBuffer;				    // Reserve memory space (https://bblanchon.github.io/ArduinoJson/)
+	DynamicJsonBuffer jsonBuffer;				            // Reserve memory space (https://bblanchon.github.io/ArduinoJson/)
 	JsonObject& root = jsonBuffer.createObject();   // Create the JSON object
 
 	// Always publish the mode so that there is a current retained message
@@ -437,6 +445,7 @@ void publishAll() {
 	publishColour();
 	publishState();
 	publishRecovery();
+  publishAvailability();
 }
 #pragma endregion
 
@@ -1441,6 +1450,11 @@ void loop() {
   }
   else if (currentMode == 11) {
 	stairStartup();
+  }
+
+  if ((millis() - availabilityPublishInterval) >= availabilityPublishTimer) {
+    publishAvailability();
+    availabilityPublishTimer = millis();
   }
 
   #ifdef UseOTA
