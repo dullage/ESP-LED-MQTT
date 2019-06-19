@@ -1,5 +1,5 @@
 // Uncomment this to enable Arduino OTA
-//#define UseOTA
+#define UseOTA
 
 #include <Arduino.h>
 #include <ESP8266WiFi.h>
@@ -11,24 +11,17 @@
   #include <WiFiUdp.h>
   #include <ESP8266mDNS.h>
 #endif
+#include "config.h"
 
 // Neopixel
-#define PIN            3
-#define NUMPIXELS      41
 Adafruit_NeoPixel pixels = Adafruit_NeoPixel(NUMPIXELS, PIN, NEO_GRB + NEO_KHZ800);
 int ledArray[NUMPIXELS][3]; // Custom array to allow us to buffer changes before sending them
 
 // Wifi
 WiFiClient espClient;
-char* SSID = "REDACTED";
-char* WiFiPassword = "REDACTED";
-char* WiFiHostname = "REDACTED";
 
 // MQTT
-const char* mqtt_server = "REDACTED";
 int mqtt_port = 1883;
-const char* mqttUser = "REDACTED";
-const char* mqttPass = "REDACTED";
 PubSubClient client(espClient);
 
 const uint8_t bufferSize = 20;
@@ -43,12 +36,12 @@ boolean offlineMode = true;
 boolean recovered = false;
 
 // Device Specific Topics
-const char* commandlTopic = "light/test";
-const char* stateTopic = "light/test/state";
-const char* rgbCommandTopic = "light/test/rgb";
-const char* rgbStateTopic = "light/test/rgb/state";
-const char* availabilityTopic = "light/test/availability";
-const char* recoveryTopic = "light/test/recovery";
+const char* commandlTopic = "light/led_kitchen";
+const char* stateTopic = "light/led_kitchen/state";
+const char* rgbCommandTopic = "light/led_kitchen/rgb";
+const char* rgbStateTopic = "light/led_kitchen/rgb/state";
+const char* availabilityTopic = "light/led_kitchen/availability";
+const char* recoveryTopic = "light/led_kitchen/recovery";
 
 // Device specific variables (currently only used for animations specific to my stair LEDs, leave false if you are not me)
 boolean stairs = false;
@@ -64,7 +57,7 @@ unsigned long availabilityPublishTimer = 0;
 int availabilityPublishInterval = 30000;
 
 #pragma region Global Animation Variables
-const int numModes = 11; // This is the total number of modes
+const int numModes = 13; // This is the total number of modes
 int currentMode; // 0
 
 int brightness = 255;
@@ -91,6 +84,7 @@ unsigned long previousMillis;
 boolean flipFlop;
 int currentStep;
 int currentPixel;
+int currentColor;
 
 unsigned long colourDelaySeed;
 int colourJumpSeed;
@@ -138,106 +132,113 @@ void resetGlobalAnimationVariables() {
 }
 
 void setModeDefaults(int mode) {
-	// All Off
-		// No additional defaults
+  // All Off
+    // No additional defaults
 
-	// All On
-	if (mode == 1) {
-		rgbValueTwo[0] = 255;
-		rgbValueTwo[1] = 147;
-		rgbValueTwo[2] = 41;
-		colourDelay = 2;
-	}
+  // All On
+  if (mode == 1) {
+    rgbValueTwo[0] = 255;
+    rgbValueTwo[1] = 147;
+    rgbValueTwo[2] = 41;
+    colourDelay = 2;
+  }
 
-	// Fade To Colour
-	else if (mode == 2) {
-		rgbValueTwo[0] = 0;
-		rgbValueTwo[1] = 0;
-		rgbValueTwo[2] = 255;
-		colourDelay = 20;
-	}
+  // Fade To Colour
+  else if (mode == 2) {
+    rgbValueTwo[0] = 0;
+    rgbValueTwo[1] = 0;
+    rgbValueTwo[2] = 255;
+    colourDelay = 20;
+  }
 
-	// Strobe
-	else if (mode == 3) {
-		colourDelay = 40;
-	}
+  // Strobe
+  else if (mode == 3) {
+    colourDelay = 40;
+  }
 
-	// Fire
-	else if (mode == 4) {
-		colourDelay = 20;
-	}
+  // Fire
+  else if (mode == 4) {
+    colourDelay = 20;
+  }
 
-	// Colour Phase
-	else if (mode == 5) {
-		colourDelay = 30;
-	}
+  // Colour Phase
+  else if (mode == 5) {
+    colourDelay = 30;
+  }
 
-	// Sparkle
-	else if (mode == 6) {
-		rgbValueTwo[0] = 150;
-		rgbValueTwo[1] = 150;
-		rgbValueTwo[2] = 150;
-		colourJump = 5;
-	}
+  // Sparkle
+  else if (mode == 6) {
+    rgbValueTwo[0] = 150;
+    rgbValueTwo[1] = 150;
+    rgbValueTwo[2] = 150;
+    colourJump = 5;
+  }
 
-	// Shoot
-	else if (mode == 7) {
-		rgbValueTwo[0] = 50;
-		rgbValueTwo[1] = 50;
-		rgbValueTwo[2] = 255;
-		colourJump = 20;
-		loopDelay = 10000;
-		highPixelDelay = 5;
-		multiplier = 1.15;
-		randomise = true;
-		trailLength = 7;
-	}
+  // Shoot
+  else if (mode == 7) {
+    rgbValueTwo[0] = 50;
+    rgbValueTwo[1] = 50;
+    rgbValueTwo[2] = 255;
+    colourJump = 20;
+    loopDelay = 10000;
+    highPixelDelay = 5;
+    multiplier = 1.15;
+    randomise = true;
+    trailLength = 7;
+  }
 
-	// Mode 8
-	else if (mode == 8) {
-		rgbValueTwo[0] = 100;
-		rgbValueTwo[1] = 100;
-		rgbValueTwo[2] = 255;
-		colourDelay = 4;
-		chance = 15000;
-	}
+  // Mode 8
+  else if (mode == 8) {
+    rgbValueTwo[0] = 100;
+    rgbValueTwo[1] = 100;
+    rgbValueTwo[2] = 255;
+    colourDelay = 4;
+    chance = 15000;
+  }
 
-	// Stairs On
-	else if (mode == 9) {
-		rgbValueTwo[0] = 255;
-		rgbValueTwo[1] = 147;
-		rgbValueTwo[2] = 41;
-	}
+  // Stairs On
+  else if (mode == 9) {
+    rgbValueTwo[0] = 255;
+    rgbValueTwo[1] = 147;
+    rgbValueTwo[2] = 41;
+  }
 
-	// Stair Shutdown
-	else if (mode == 10) {
-		rgbValueTwo[0] = 255;
-		rgbValueTwo[1] = 0;
-		rgbValueTwo[2] = 0;
-	}
+  // Stair Shutdown
+  else if (mode == 10) {
+    rgbValueTwo[0] = 255;
+    rgbValueTwo[1] = 0;
+    rgbValueTwo[2] = 0;
+  }
 
-	// Stair Startup
-	else if (mode == 11) {
-		rgbValueTwo[0] = 255;
-		rgbValueTwo[1] = 147;
-		rgbValueTwo[2] = 41;
-	}
+  // Stair Startup
+  else if (mode == 11) {
+    rgbValueTwo[0] = 255;
+    rgbValueTwo[1] = 147;
+    rgbValueTwo[2] = 41;
+  }
+
+  // Rainbow
+  else if (mode == 12 || mode == 13) {
+    colourDelay = 50;
+    currentColor = 0;
+    previousMillis = millis();
+  }
 }
 
 void reconnect() {
-	// IF statements used to complete process in single loop if possible
+  // IF statements used to complete process in single loop if possible
   
-	// 0 - Turn the LED on and log the reconnect start time
-	if (currentReconnectStep == 0) {
-		digitalWrite(LED_BUILTIN, LOW);
-		reconnectStart = millis();
-		currentReconnectStep++;
+  // 0 - Turn the LED on and log the reconnect start time
+  if (currentReconnectStep == 0) {
+    digitalWrite(LED_BUILTIN, LOW);
+    reconnectStart = millis();
+    currentReconnectStep++;
 
    // If the ESP is reconnecting after a connection failure then wait a second before starting the reconnect routine
     if (offlineMode == false) {
       delay(1000);
     }
-	}
+  }
 
   // If we've previously had a connection and have been trying to connect for more than 2 minutes then restart the ESP.
   // We don't do this if we've never had a connection as that means the issue isn't temporary and we don't want the relay
@@ -247,78 +248,78 @@ void reconnect() {
     ESP.restart();
   }
 
-	// 1 - Check WiFi Connection
-	if (currentReconnectStep == 1) {
-		if (WiFi.status() != WL_CONNECTED) {
-			if ((millis() - lastReconnectMessage) > messageInterval) {
-				Serial.print("Awaiting WiFi Connection (");
-				Serial.print((millis() - reconnectStart) / 1000);
-				Serial.println("s)");
-				lastReconnectMessage = millis();
-			}
-		}
-		else {
-			Serial.println("WiFi connected!");
-			Serial.print("SSID: ");
-			Serial.print(WiFi.SSID());
-			Serial.println("");
-			Serial.print("IP address: ");
-			Serial.println(WiFi.localIP());
-			Serial.println("");
+  // 1 - Check WiFi Connection
+  if (currentReconnectStep == 1) {
+    if (WiFi.status() != WL_CONNECTED) {
+      if ((millis() - lastReconnectMessage) > messageInterval) {
+        Serial.print("Awaiting WiFi Connection (");
+        Serial.print((millis() - reconnectStart) / 1000);
+        Serial.println("s)");
+        lastReconnectMessage = millis();
+      }
+    }
+    else {
+      Serial.println("WiFi connected!");
+      Serial.print("SSID: ");
+      Serial.print(WiFi.SSID());
+      Serial.println("");
+      Serial.print("IP address: ");
+      Serial.println(WiFi.localIP());
+      Serial.println("");
 
-			lastReconnectMessage = 0;
-			currentReconnectStep = 2;
-		}
-	}
+      lastReconnectMessage = 0;
+      currentReconnectStep = 2;
+    }
+  }
 
-	// 2 - Check MQTT Connection
-	if (currentReconnectStep == 2) {
-		if (!client.connected()) {
-			if ((millis() - lastReconnectMessage) > messageInterval) {
-				Serial.print("Awaiting MQTT Connection (");
-				Serial.print((millis() - reconnectStart) / 1000);
-				Serial.println("s)");
-				lastReconnectMessage = millis();
+  // 2 - Check MQTT Connection
+  if (currentReconnectStep == 2) {
+    if (!client.connected()) {
+      if ((millis() - lastReconnectMessage) > messageInterval) {
+        Serial.print("Awaiting MQTT Connection (");
+        Serial.print((millis() - reconnectStart) / 1000);
+        Serial.println("s)");
+        lastReconnectMessage = millis();
 
-				String clientId = "ESP8266Client-";
-				clientId += String(random(0xffff), HEX);
-				client.connect(clientId.c_str(), mqttUser, mqttPass, availabilityTopic, 0, true, "0");
-			}
+        String clientId = "ESP8266Client-";
+        clientId += String(random(0xffff), HEX);
+        client.connect(clientId.c_str(), mqttUser, mqttPass, availabilityTopic, 0, true, "0");
+      }
 
-			// Check the MQTT again and go forward if necessary
-			if (client.connected()) {
-				Serial.println("MQTT connected!");
-				Serial.println("");
+      // Check the MQTT again and go forward if necessary
+      if (client.connected()) {
+        Serial.println("MQTT connected!");
+        Serial.println("");
 
-				lastReconnectMessage = 0;
-				currentReconnectStep = 3;
-			}
+        lastReconnectMessage = 0;
+        currentReconnectStep = 3;
+      }
 
-			// Check the WiFi again and go back if necessary
-			else if (WiFi.status() != WL_CONNECTED) {
-				currentReconnectStep = 1;
-			}
-		}
-		else {
-			Serial.println("MQTT connected!");
-			Serial.println("");
+      // Check the WiFi again and go back if necessary
+      else if (WiFi.status() != WL_CONNECTED) {
+        currentReconnectStep = 1;
+      }
+    }
+    else {
+      Serial.println("MQTT connected!");
+      Serial.println("");
 
-			lastReconnectMessage = 0;
-			currentReconnectStep = 3;
-		}
-	}
+      lastReconnectMessage = 0;
+      currentReconnectStep = 3;
+    }
+  }
 
-	// 3 - All connected, turn the LED back on and then subscribe to the MQTT topics
-	if (currentReconnectStep == 3) {
-		digitalWrite(LED_BUILTIN, HIGH);  // Turn the LED off
+  // 3 - All connected, turn the LED back on and then subscribe to the MQTT topics
+  if (currentReconnectStep == 3) {
+    digitalWrite(LED_BUILTIN, HIGH);  // Turn the LED off
 
     publishAvailability();
 
-		// MQTT Subscriptions
-		client.subscribe(sunPositionTopic);
-		client.subscribe(rgbCommandTopic);
-		client.subscribe(commandlTopic);
-		client.subscribe(recoveryTopic);
+    // MQTT Subscriptions
+    client.subscribe(sunPositionTopic);
+    client.subscribe(rgbCommandTopic);
+    client.subscribe(commandlTopic);
+    client.subscribe(recoveryTopic);
 
     if (offlineMode == true) {
       offlineMode = false;
@@ -326,48 +327,48 @@ void reconnect() {
       Serial.println("");
     }
 
-		currentReconnectStep = 0; // Reset
-	}
+    currentReconnectStep = 0; // Reset
+  }
 }
 
 #pragma region MiscFunctions
 int* randomColour() { // Not yet used but could be useful
-	static int aRandomColour[3];
+  static int aRandomColour[3];
 
-	aRandomColour[0] = random(255);
-	aRandomColour[1] = random(255);
-	aRandomColour[2] = random(255);
+  aRandomColour[0] = random(255);
+  aRandomColour[1] = random(255);
+  aRandomColour[2] = random(255);
 
-	return aRandomColour;
+  return aRandomColour;
 }
 
 void updateLedArray_singleColour(int targetColour[3]) {
-	for (int i = 0; i < NUMPIXELS; i++) {
-		ledArray[i][0] = targetColour[0];
-		ledArray[i][1] = targetColour[1];
-		ledArray[i][2] = targetColour[2];
-	}
+  for (int i = 0; i < NUMPIXELS; i++) {
+    ledArray[i][0] = targetColour[0];
+    ledArray[i][1] = targetColour[1];
+    ledArray[i][2] = targetColour[2];
+  }
 }
 
 void updateStripFromLedArray() {
-	for (int i = 0; i < NUMPIXELS; i++) {
-		pixels.setPixelColor(i, pixels.Color(ledArray[i][0], ledArray[i][1], ledArray[i][2]));
-	}
-	pixels.show();
+  for (int i = 0; i < NUMPIXELS; i++) {
+    pixels.setPixelColor(i, pixels.Color(ledArray[i][0], ledArray[i][1], ledArray[i][2]));
+  }
+  pixels.show();
 }
 
 void publishState() {
-	if (currentMode == 0) {
-		client.publish(stateTopic, "0", true);
-	}
-	else {
-		client.publish(stateTopic, "1", true);
-	}
+  if (currentMode == 0) {
+    client.publish(stateTopic, "0", true);
+  }
+  else {
+    client.publish(stateTopic, "1", true);
+  }
 }
 
 void publishColour() {
-	snprintf(buffer, bufferSize, "%d,%d,%d", rgbValueTwo[0], rgbValueTwo[1], rgbValueTwo[2]);
-	client.publish(rgbStateTopic, buffer);
+  snprintf(buffer, bufferSize, "%d,%d,%d", rgbValueTwo[0], rgbValueTwo[1], rgbValueTwo[2]);
+  client.publish(rgbStateTopic, buffer);
 }
 
 void publishAvailability() {
@@ -375,76 +376,76 @@ void publishAvailability() {
 }
 
 void publishRecovery() {
-	DynamicJsonBuffer jsonBuffer;				            // Reserve memory space (https://bblanchon.github.io/ArduinoJson/)
-	JsonObject& root = jsonBuffer.createObject();   // Create the JSON object
+  DynamicJsonBuffer jsonBuffer;                   // Reserve memory space (https://bblanchon.github.io/ArduinoJson/)
+  JsonObject& root = jsonBuffer.createObject();   // Create the JSON object
 
-	// Always publish the mode so that there is a current retained message
-	root["0"] = currentMode;
+  // Always publish the mode so that there is a current retained message
+  root["0"] = currentMode;
 
-	// Only publish the other variables if they are non-default
-	if (rgbValueOne[0] != 0 | rgbValueOne[1] != 0 | rgbValueOne[2] != 0) {
-		JsonArray& rgbValueOneArray = root.createNestedArray("1");
-		rgbValueOneArray.add(rgbValueOne[0]);
-		rgbValueOneArray.add(rgbValueOne[1]);
-		rgbValueOneArray.add(rgbValueOne[2]);
-	}
+  // Only publish the other variables if they are non-default
+  if (rgbValueOne[0] != 0 | rgbValueOne[1] != 0 | rgbValueOne[2] != 0) {
+    JsonArray& rgbValueOneArray = root.createNestedArray("1");
+    rgbValueOneArray.add(rgbValueOne[0]);
+    rgbValueOneArray.add(rgbValueOne[1]);
+    rgbValueOneArray.add(rgbValueOne[2]);
+  }
 
-	if (rgbValueTwo[0] != 255 | rgbValueTwo[1] != 255 | rgbValueTwo[2] != 255) {
-		JsonArray& rgbValueTwoArray = root.createNestedArray("2");
-		rgbValueTwoArray.add(rgbValueTwo[0]);
-		rgbValueTwoArray.add(rgbValueTwo[1]);
-		rgbValueTwoArray.add(rgbValueTwo[2]);
-	}
+  if (rgbValueTwo[0] != 255 | rgbValueTwo[1] != 255 | rgbValueTwo[2] != 255) {
+    JsonArray& rgbValueTwoArray = root.createNestedArray("2");
+    rgbValueTwoArray.add(rgbValueTwo[0]);
+    rgbValueTwoArray.add(rgbValueTwo[1]);
+    rgbValueTwoArray.add(rgbValueTwo[2]);
+  }
 
-	if (colourDelay != 0) {
-		root["3"] = colourDelay;
-	}
+  if (colourDelay != 0) {
+    root["3"] = colourDelay;
+  }
 
-	if (colourJump != 1) {
-		root["4"] = colourJump;
-	}
+  if (colourJump != 1) {
+    root["4"] = colourJump;
+  }
 
-	if (pixelDelay != 0) {
-		root["5"] = pixelDelay;
-	}
+  if (pixelDelay != 0) {
+    root["5"] = pixelDelay;
+  }
 
-	if (pixelJump != 1) {
-		root["6"] = pixelJump;
-	}
+  if (pixelJump != 1) {
+    root["6"] = pixelJump;
+  }
 
-	if (randomise != false) {
-		root["7"] = randomise;
-	}
+  if (randomise != false) {
+    root["7"] = randomise;
+  }
 
-	if (loopDelay != 0) {
-		root["8"] = loopDelay;
-	}
+  if (loopDelay != 0) {
+    root["8"] = loopDelay;
+  }
 
-	if (highPixelDelay != 0) {
-		root["9"] = highPixelDelay;
-	}
+  if (highPixelDelay != 0) {
+    root["9"] = highPixelDelay;
+  }
 
-	if (multiplier != 1) {
-		root["10"] = multiplier;
-	}
+  if (multiplier != 1) {
+    root["10"] = multiplier;
+  }
 
-	if (chance != 100) {
-		root["11"] = chance;
-	}
+  if (chance != 100) {
+    root["11"] = chance;
+  }
 
-	if (trailLength != 0) {
-		root["12"] = trailLength;
-	}
+  if (trailLength != 0) {
+    root["12"] = trailLength;
+  }
 
-	char buffer[256];
-	root.printTo(buffer, sizeof(buffer));
-	client.publish(recoveryTopic, buffer, true);
+  char buffer[256];
+  root.printTo(buffer, sizeof(buffer));
+  client.publish(recoveryTopic, buffer, true);
 }
 
 void publishAll() {
-	publishColour();
-	publishState();
-	publishRecovery();
+  publishColour();
+  publishState();
+  publishRecovery();
   publishAvailability();
 }
 #pragma endregion
@@ -467,66 +468,66 @@ void allRgbValueTwo() {
 }
 
 void stairsOn() {
-	if (flipFlop == 0) { // This isn't used
-		updateLedArray_singleColour(rgbValueOne);
+  if (flipFlop == 0) { // This isn't used
+    updateLedArray_singleColour(rgbValueOne);
 
-		for (int i = 0; i < 3; i++) {
-			ledArray[3][i] = rgbValueTwo[i];
-			ledArray[12][i] = rgbValueTwo[i];
-			ledArray[21][i] = rgbValueTwo[i];
-			ledArray[30][i] = rgbValueTwo[i];
-			ledArray[40][i] = rgbValueTwo[i];
-			ledArray[49][i] = rgbValueTwo[i];
-			ledArray[58][i] = rgbValueTwo[i];
-			ledArray[68][i] = rgbValueTwo[i];
-			ledArray[77][i] = rgbValueTwo[i];
-			ledArray[86][i] = rgbValueTwo[i];
-			ledArray[96][i] = rgbValueTwo[i];
-			ledArray[105][i] = rgbValueTwo[i];
-			ledArray[111][i] = rgbValueTwo[i];
-		}
-		updateStripFromLedArray();
-	}
+    for (int i = 0; i < 3; i++) {
+      ledArray[3][i] = rgbValueTwo[i];
+      ledArray[12][i] = rgbValueTwo[i];
+      ledArray[21][i] = rgbValueTwo[i];
+      ledArray[30][i] = rgbValueTwo[i];
+      ledArray[40][i] = rgbValueTwo[i];
+      ledArray[49][i] = rgbValueTwo[i];
+      ledArray[58][i] = rgbValueTwo[i];
+      ledArray[68][i] = rgbValueTwo[i];
+      ledArray[77][i] = rgbValueTwo[i];
+      ledArray[86][i] = rgbValueTwo[i];
+      ledArray[96][i] = rgbValueTwo[i];
+      ledArray[105][i] = rgbValueTwo[i];
+      ledArray[111][i] = rgbValueTwo[i];
+    }
+    updateStripFromLedArray();
+  }
 }
 
 void stairsOff() {
-	if (flipFlop == 0) { // This isn't used
-		updateLedArray_singleColour(rgbValueOne);
+  if (flipFlop == 0) { // This isn't used
+    updateLedArray_singleColour(rgbValueOne);
 
-		if (sunPosition == 0) {
-			rgbValueTwo[0] = 2;
-			rgbValueTwo[1] = 1;
-			rgbValueTwo[2] = 0;
-		}
-		else if (sunPosition == 1) {
-			rgbValueTwo[0] = 0;
-			rgbValueTwo[1] = 0;
-			rgbValueTwo[2] = 0;
-		}
+    if (sunPosition == 0) {
+      rgbValueTwo[0] = 2;
+      rgbValueTwo[1] = 1;
+      rgbValueTwo[2] = 0;
+    }
+    else if (sunPosition == 1) {
+      rgbValueTwo[0] = 0;
+      rgbValueTwo[1] = 0;
+      rgbValueTwo[2] = 0;
+    }
 
-		for (int i = 0; i < 3; i++) {
-			ledArray[0][i] = rgbValueTwo[i];
-			ledArray[9][i] = rgbValueTwo[i];
-			ledArray[18][i] = rgbValueTwo[i];
-			ledArray[27][i] = rgbValueTwo[i];
-			ledArray[37][i] = rgbValueTwo[i];
-			ledArray[46][i] = rgbValueTwo[i];
-			ledArray[55][i] = rgbValueTwo[i];
-			ledArray[65][i] = rgbValueTwo[i];
-			ledArray[74][i] = rgbValueTwo[i];
-			ledArray[83][i] = rgbValueTwo[i];
-			ledArray[93][i] = rgbValueTwo[i];
-			ledArray[102][i] = rgbValueTwo[i];
-			ledArray[111][i] = rgbValueTwo[i];
-		}
-		updateStripFromLedArray();
-	}
+    for (int i = 0; i < 3; i++) {
+      ledArray[0][i] = rgbValueTwo[i];
+      ledArray[9][i] = rgbValueTwo[i];
+      ledArray[18][i] = rgbValueTwo[i];
+      ledArray[27][i] = rgbValueTwo[i];
+      ledArray[37][i] = rgbValueTwo[i];
+      ledArray[46][i] = rgbValueTwo[i];
+      ledArray[55][i] = rgbValueTwo[i];
+      ledArray[65][i] = rgbValueTwo[i];
+      ledArray[74][i] = rgbValueTwo[i];
+      ledArray[83][i] = rgbValueTwo[i];
+      ledArray[93][i] = rgbValueTwo[i];
+      ledArray[102][i] = rgbValueTwo[i];
+      ledArray[111][i] = rgbValueTwo[i];
+    }
+    updateStripFromLedArray();
+  }
 }
 
 void fadeToColour(bool useFlipFlop = false) {
   if (flipFlop == 0) { // This is used
     unsigned long currentMillis = millis();
-    if (currentMillis - previousMillis >= colourDelay) {
+    if (previousMillis > currentMillis || currentMillis - previousMillis >= colourDelay) {
       int count = 0; // Reset the count
       for (int pixel = 0;pixel < NUMPIXELS;pixel ++){               // For every pixel
         if (ledArray[pixel][0] != rgbValueTwo[0] | ledArray[pixel][1] != rgbValueTwo[1] | ledArray[pixel][2] != rgbValueTwo[2]) {
@@ -538,13 +539,13 @@ void fadeToColour(bool useFlipFlop = false) {
               ledArray[pixel][colour] -= 1;                                 // Subtract 1
             }
           }
-		  pixels.setPixelColor(pixel, pixels.Color(ledArray[pixel][0], ledArray[pixel][1], ledArray[pixel][2]));
+      pixels.setPixelColor(pixel, pixels.Color(ledArray[pixel][0], ledArray[pixel][1], ledArray[pixel][2]));
         }
         else {
           count ++;
         }
       }
-	  pixels.show();
+    pixels.show();
       if (count == NUMPIXELS && useFlipFlop == true) {
         flipFlop = 1;
       }
@@ -555,68 +556,68 @@ void fadeToColour(bool useFlipFlop = false) {
 }
 
 void fadePixelToTargetColour(int pixelNo) {
-	if (millis() - previousMillis >= colourDelay) {
-		if (ledArray[pixelNo][0] != rgbValueTwo[0] | ledArray[pixelNo][1] != rgbValueTwo[1] | ledArray[pixelNo][2] != rgbValueTwo[2]) {
+  if (millis() - previousMillis >= colourDelay) {
+    if (ledArray[pixelNo][0] != rgbValueTwo[0] | ledArray[pixelNo][1] != rgbValueTwo[1] | ledArray[pixelNo][2] != rgbValueTwo[2]) {
 
-			for (int colour = 0; colour < 3; colour++) {                    // For each colour
-				if (ledArray[pixelNo][colour] < rgbValueTwo[colour]) {      // If the colour value is less that it should be
-					ledArray[pixelNo][colour] += colourJump;                // Add the colour jump
-					if (ledArray[pixelNo][colour] > rgbValueTwo[colour]) {  // Jump back if we've jumped over it
-						ledArray[pixelNo][colour] = rgbValueTwo[colour];
-					}
-				}
-				else if (ledArray[pixelNo][colour] > rgbValueTwo[colour]) { // If the colour value is more that it should be
-					ledArray[pixelNo][colour] -= colourJump;                // Subtract the colour jump
-					if (ledArray[pixelNo][colour] < rgbValueTwo[colour]) {  // Jump back if we've jumped under it
-						ledArray[pixelNo][colour] = rgbValueTwo[colour];
-					}
-				}
-			}
+      for (int colour = 0; colour < 3; colour++) {                    // For each colour
+        if (ledArray[pixelNo][colour] < rgbValueTwo[colour]) {      // If the colour value is less that it should be
+          ledArray[pixelNo][colour] += colourJump;                // Add the colour jump
+          if (ledArray[pixelNo][colour] > rgbValueTwo[colour]) {  // Jump back if we've jumped over it
+            ledArray[pixelNo][colour] = rgbValueTwo[colour];
+          }
+        }
+        else if (ledArray[pixelNo][colour] > rgbValueTwo[colour]) { // If the colour value is more that it should be
+          ledArray[pixelNo][colour] -= colourJump;                // Subtract the colour jump
+          if (ledArray[pixelNo][colour] < rgbValueTwo[colour]) {  // Jump back if we've jumped under it
+            ledArray[pixelNo][colour] = rgbValueTwo[colour];
+          }
+        }
+      }
 
-			pixels.setPixelColor(pixelNo, pixels.Color(ledArray[pixelNo][0], ledArray[pixelNo][1], ledArray[pixelNo][2]));
-			pixels.show();
-		}
-		else {
-			currentStep++;
-		}
+      pixels.setPixelColor(pixelNo, pixels.Color(ledArray[pixelNo][0], ledArray[pixelNo][1], ledArray[pixelNo][2]));
+      pixels.show();
+    }
+    else {
+      currentStep++;
+    }
 
-		previousMillis = millis();
-	}
+    previousMillis = millis();
+  }
 }
 
 void fadePixelToBaseColour(int pixelNo) {
-	if (millis() - previousMillis >= colourDelay) {
-		if (ledArray[pixelNo][0] != rgbValueOne[0] | ledArray[pixelNo][1] != rgbValueOne[1] | ledArray[pixelNo][2] != rgbValueOne[2]) {
+  if (millis() - previousMillis >= colourDelay) {
+    if (ledArray[pixelNo][0] != rgbValueOne[0] | ledArray[pixelNo][1] != rgbValueOne[1] | ledArray[pixelNo][2] != rgbValueOne[2]) {
 
-			for (int colour = 0; colour < 3; colour++) {                    // For each colour
-				if (ledArray[pixelNo][colour] < rgbValueOne[colour]) {      // If the colour value is less that it should be
-					ledArray[pixelNo][colour] += colourJump;                // Add the colour jump
-					if (ledArray[pixelNo][colour] > rgbValueOne[colour]) {  // Jump back if we've jumped over it
-						ledArray[pixelNo][colour] = rgbValueOne[colour];
-					}
-				}
-				else if (ledArray[pixelNo][colour] > rgbValueOne[colour]) { // If the colour value is more that it should be
-					ledArray[pixelNo][colour] -= colourJump;                // Subtract the colour jump
-					if (ledArray[pixelNo][colour] < rgbValueOne[colour]) {  // Jump back if we've jumped under it
-						ledArray[pixelNo][colour] = rgbValueOne[colour];
-					}
-				}
-			}
+      for (int colour = 0; colour < 3; colour++) {                    // For each colour
+        if (ledArray[pixelNo][colour] < rgbValueOne[colour]) {      // If the colour value is less that it should be
+          ledArray[pixelNo][colour] += colourJump;                // Add the colour jump
+          if (ledArray[pixelNo][colour] > rgbValueOne[colour]) {  // Jump back if we've jumped over it
+            ledArray[pixelNo][colour] = rgbValueOne[colour];
+          }
+        }
+        else if (ledArray[pixelNo][colour] > rgbValueOne[colour]) { // If the colour value is more that it should be
+          ledArray[pixelNo][colour] -= colourJump;                // Subtract the colour jump
+          if (ledArray[pixelNo][colour] < rgbValueOne[colour]) {  // Jump back if we've jumped under it
+            ledArray[pixelNo][colour] = rgbValueOne[colour];
+          }
+        }
+      }
 
-			pixels.setPixelColor(pixelNo, pixels.Color(ledArray[pixelNo][0], ledArray[pixelNo][1], ledArray[pixelNo][2]));
-			pixels.show();
-		}
-		else {
-			currentStep++;
-		}
+      pixels.setPixelColor(pixelNo, pixels.Color(ledArray[pixelNo][0], ledArray[pixelNo][1], ledArray[pixelNo][2]));
+      pixels.show();
+    }
+    else {
+      currentStep++;
+    }
 
-		previousMillis = millis();
-	}
+    previousMillis = millis();
+  }
 }
 
 void strobe() {
   unsigned long currentMillis = millis();
-  if (currentMillis - previousMillis >= colourDelay) {
+  if (previousMillis > currentMillis || currentMillis - previousMillis >= colourDelay) {
     if (flipFlop == 1) {
       updateLedArray_singleColour(rgbValueTwo);
       updateStripFromLedArray();
@@ -746,7 +747,7 @@ void sparkle() {
 
   // Pixel Delay
   if (currentStep == 1) {
-    if (currentMillis - previousMillis >= pixelDelay) {
+    if (previousMillis > currentMillis || currentMillis - previousMillis >= pixelDelay) {
       if (randomise == true) {
         pixelDelay = random(pixelDelaySeed);
         colourDelay = random(colourDelaySeed); // Only change between pixels so the light doesn't waver
@@ -758,7 +759,7 @@ void sparkle() {
   }
 
   // Roll Up
-  if (currentStep == 2 && (currentMillis - previousMillis >= colourDelay )) {
+  if (currentStep == 2 && (previousMillis > currentMillis || currentMillis - previousMillis >= colourDelay )) {
     if (ledArray[currentPixel][0] != rgbValueTwo[0] | ledArray[currentPixel][1] != rgbValueTwo[1] | ledArray[currentPixel][2] != rgbValueTwo[2]) {   // If the pixel hasn't reached peak
       for (int i = 1;!(i > colourJump);i++) {
         for (int col = 0;col < 3;col++) {                                                                         // For each colour
@@ -779,7 +780,7 @@ void sparkle() {
   }
 
   // Roll Down
-  if (currentStep == 3 && (currentMillis - previousMillis >= colourDelay )) {
+  if (currentStep == 3 && (previousMillis > currentMillis || currentMillis - previousMillis >= colourDelay )) {
     if (ledArray[currentPixel][0] != rgbValueOne[0] | ledArray[currentPixel][1] != rgbValueOne[1] | ledArray[currentPixel][2] != rgbValueOne[2]) {   // If the pixel hasn't reached base
       for (int i = 1;!(i > colourJump);i++) {
         for (int col = 0;col < 3;col++) {                                                                         // For each colour
@@ -812,7 +813,7 @@ void rain() {
     updateStripFromLedArray();
   }
 
-  if (currentMillis - previousMillis >= colourDelay) {
+  if (previousMillis > currentMillis || currentMillis - previousMillis >= colourDelay) {
     for (int pixel = 0;pixel < NUMPIXELS;pixel ++){               // For every pixel
       for (int i = 1;!(i > colourJump);i++) {
         if (ledArray[pixel][0] != rgbValueOne[0] | ledArray[pixel][1] != rgbValueOne[1] | ledArray[pixel][2] != rgbValueOne[2]) {
@@ -834,208 +835,246 @@ void rain() {
 }
 
 void shoot() {
-	unsigned long currentMillis = millis();
+  unsigned long currentMillis = millis();
 
-	// Initiator
-	if (currentStep == 0) {
-		allRgbValueOne(); // Sets all LEDs to rgbValueOne
-		loopDelaySeed = loopDelay;
-		colourJumpSeed = colourJump;
-		multiplierSeed = multiplier;
-		highPixelDelaySeed = highPixelDelay; // Seeded because it's multiplied not because it's randomised
-		currentStep++;
-	}
+  // Initiator
+  if (currentStep == 0) {
+    allRgbValueOne(); // Sets all LEDs to rgbValueOne
+    loopDelaySeed = loopDelay;
+    colourJumpSeed = colourJump;
+    multiplierSeed = multiplier;
+    highPixelDelaySeed = highPixelDelay; // Seeded because it's multiplied not because it's randomised
+    currentStep++;
+  }
 
-	// Loop Delay
-	if (currentStep == 1) {
-		if (currentMillis - previousMillis >= loopDelay) {
-			if (randomise == true) {
-				loopDelay = random(loopDelaySeed);
-				colourJump = random(1, colourJumpSeed);
-				float multiplierSeedX = (multiplier * 100.00);
-				multiplier = (random(multiplierSeedX * 0.95, multiplierSeedX * 1.05)) / 100.00; // +-5% - Best at 1.25
-			}
-			highPixelDelay = highPixelDelaySeed;
-			previousMillis = currentMillis;
-			currentStep++;
-		}
-	}
+  // Loop Delay
+  if (currentStep == 1) {
+    if (previousMillis > currentMillis || currentMillis - previousMillis >= loopDelay) {
+      if (randomise == true) {
+        loopDelay = random(loopDelaySeed);
+        colourJump = random(1, colourJumpSeed);
+        float multiplierSeedX = (multiplier * 100.00);
+        multiplier = (random(multiplierSeedX * 0.95, multiplierSeedX * 1.05)) / 100.00; // +-5% - Best at 1.25
+      }
+      highPixelDelay = highPixelDelaySeed;
+      previousMillis = currentMillis;
+      currentStep++;
+    }
+  }
 
-	// Pixel Delay
-	if (currentStep == 2) {
-		if (currentMillis - previousMillis >= pixelDelay) {
-			previousMillis = currentMillis;
-			currentStep++;
-		}
-	}
+  // Pixel Delay
+  if (currentStep == 2) {
+    if (previousMillis > currentMillis || currentMillis - previousMillis >= pixelDelay) {
+      previousMillis = currentMillis;
+      currentStep++;
+    }
+  }
 
-	// Roll Up
-	if (currentPixel > (NUMPIXELS - 1)) { // Skip the roll up if we're after the last pixel (trail)
-		currentStep = 4;
-	}
+  // Roll Up
+  if (currentPixel > (NUMPIXELS - 1)) { // Skip the roll up if we're after the last pixel (trail)
+    currentStep = 4;
+  }
 
-	if (currentStep == 3 && (currentMillis - previousMillis >= colourDelay)) {
-		if (ledArray[currentPixel][0] != rgbValueTwo[0] | ledArray[currentPixel][1] != rgbValueTwo[1] | ledArray[currentPixel][2] != rgbValueTwo[2]) {   // If the pixel hasn't reached peak
-			for (int i = 1; !(i > colourJump); i++) {
-				for (int col = 0; col < 3; col++) {                                                                         // For each colour
-					if (ledArray[currentPixel][col] < rgbValueTwo[col]) {                                                   // If the colour value is less that it should be
-						ledArray[currentPixel][col] += 1;                                                                   // Add 1
-					}
-					else if (ledArray[currentPixel][col] > rgbValueTwo[col]) {                                              // If the colour value is more that it should be
-						ledArray[currentPixel][col] -= 1;                                                                   // Subtract 1
-					}
-				}
-			}
-			updateStripFromLedArray();
-		}
-		else {
-			currentStep++;
-		}
-		previousMillis = currentMillis;
-	}
+  if (currentStep == 3 && (previousMillis > currentMillis || currentMillis - previousMillis >= colourDelay)) {
+    if (ledArray[currentPixel][0] != rgbValueTwo[0] | ledArray[currentPixel][1] != rgbValueTwo[1] | ledArray[currentPixel][2] != rgbValueTwo[2]) {   // If the pixel hasn't reached peak
+      for (int i = 1; !(i > colourJump); i++) {
+        for (int col = 0; col < 3; col++) {                                                                         // For each colour
+          if (ledArray[currentPixel][col] < rgbValueTwo[col]) {                                                   // If the colour value is less that it should be
+            ledArray[currentPixel][col] += 1;                                                                   // Add 1
+          }
+          else if (ledArray[currentPixel][col] > rgbValueTwo[col]) {                                              // If the colour value is more that it should be
+            ledArray[currentPixel][col] -= 1;                                                                   // Subtract 1
+          }
+        }
+      }
+      updateStripFromLedArray();
+    }
+    else {
+      currentStep++;
+    }
+    previousMillis = currentMillis;
+  }
 
-	// High Pixel Delay
+  // High Pixel Delay
 if (currentStep == 4) {
-	if (currentMillis - previousMillis >= highPixelDelay) {
-		previousMillis = currentMillis;
-		highPixelDelay = (highPixelDelay * multiplier);
-		currentStep++;
-	}
+  if (previousMillis > currentMillis || currentMillis - previousMillis >= highPixelDelay) {
+    previousMillis = currentMillis;
+    highPixelDelay = (highPixelDelay * multiplier);
+    currentStep++;
+  }
 }
 
 // Roll Down
-if (currentStep == 5 && (currentMillis - previousMillis >= colourDelay)) {
-	if (trailLength == 0) {
-		if (ledArray[currentPixel][0] != rgbValueOne[0] | ledArray[currentPixel][1] != rgbValueOne[1] | ledArray[currentPixel][2] != rgbValueOne[2]) {   // If the pixel hasn't reached base
-			for (int i = 1; !(i > colourJump); i++) {
-				for (int col = 0; col < 3; col++) {                                                                         // For each colour
-					if (ledArray[currentPixel][col] < rgbValueOne[col]) {                                                   // If the colour value is less that it should be
-						ledArray[currentPixel][col] += 1;                                                                   // Add 1
-					}
-					else if (ledArray[currentPixel][col] > rgbValueOne[col]) {                                              // If the colour value is more that it should be
-						ledArray[currentPixel][col] -= 1;                                                                   // Subtract 1
-					}
-				}
-			}
-			updateStripFromLedArray();
-		}
-		else {
-			if (currentPixel == (NUMPIXELS - 1)) {
-				currentPixel = 0;
-				currentStep = 1;
-			}
-			else {
-				currentPixel++;
-				currentStep = 2;
-			}
-		}
-	}
-	else {
-		Serial.println("---");
-		Serial.print("currentPixel = ");
-		Serial.println(currentPixel);
+if (currentStep == 5 && (previousMillis > currentMillis || currentMillis - previousMillis >= colourDelay)) {
+  if (trailLength == 0) {
+    if (ledArray[currentPixel][0] != rgbValueOne[0] | ledArray[currentPixel][1] != rgbValueOne[1] | ledArray[currentPixel][2] != rgbValueOne[2]) {   // If the pixel hasn't reached base
+      for (int i = 1; !(i > colourJump); i++) {
+        for (int col = 0; col < 3; col++) {                                                                         // For each colour
+          if (ledArray[currentPixel][col] < rgbValueOne[col]) {                                                   // If the colour value is less that it should be
+            ledArray[currentPixel][col] += 1;                                                                   // Add 1
+          }
+          else if (ledArray[currentPixel][col] > rgbValueOne[col]) {                                              // If the colour value is more that it should be
+            ledArray[currentPixel][col] -= 1;                                                                   // Subtract 1
+          }
+        }
+      }
+      updateStripFromLedArray();
+    }
+    else {
+      if (currentPixel == (NUMPIXELS - 1)) {
+        currentPixel = 0;
+        currentStep = 1;
+      }
+      else {
+        currentPixel++;
+        currentStep = 2;
+      }
+    }
+  }
+  else {
+    Serial.println("---");
+    Serial.print("currentPixel = ");
+    Serial.println(currentPixel);
 
-		int currentTrailPixel = currentPixel; // Start with the current pixel as we're about to put the next one up
+    int currentTrailPixel = currentPixel; // Start with the current pixel as we're about to put the next one up
 
-		while (currentTrailPixel >= (currentPixel - (trailLength + 1))) {
+    while (currentTrailPixel >= (currentPixel - (trailLength + 1))) {
 
-			if (currentTrailPixel >= 0 && currentTrailPixel < NUMPIXELS) {
-				Serial.print("trailPixelToUpdate = ");
-				Serial.println(currentTrailPixel);
+      if (currentTrailPixel >= 0 && currentTrailPixel < NUMPIXELS) {
+        Serial.print("trailPixelToUpdate = ");
+        Serial.println(currentTrailPixel);
 
-				if (currentTrailPixel > (currentPixel - trailLength)) { // This is the trail
-					int trailDifference = (currentPixel - currentTrailPixel);
-					float trailPercentage = ((1.0 / trailLength) * (trailLength - trailDifference));
-					Serial.print("trailPercentage = ");
-					Serial.println(trailPercentage);
+        if (currentTrailPixel > (currentPixel - trailLength)) { // This is the trail
+          int trailDifference = (currentPixel - currentTrailPixel);
+          float trailPercentage = ((1.0 / trailLength) * (trailLength - trailDifference));
+          Serial.print("trailPercentage = ");
+          Serial.println(trailPercentage);
 
-					ledArray[currentTrailPixel][0] = (rgbValueTwo[0] * trailPercentage);
-					ledArray[currentTrailPixel][1] = (rgbValueTwo[1] * trailPercentage);
-					ledArray[currentTrailPixel][2] = (rgbValueTwo[2] * trailPercentage);
-				}
-				else { // Clear the trail
-					ledArray[currentTrailPixel][0] = rgbValueOne[0];
-					ledArray[currentTrailPixel][1] = rgbValueOne[1];
-					ledArray[currentTrailPixel][2] = rgbValueOne[2];
-				}
-			}
+          ledArray[currentTrailPixel][0] = (rgbValueTwo[0] * trailPercentage);
+          ledArray[currentTrailPixel][1] = (rgbValueTwo[1] * trailPercentage);
+          ledArray[currentTrailPixel][2] = (rgbValueTwo[2] * trailPercentage);
+        }
+        else { // Clear the trail
+          ledArray[currentTrailPixel][0] = rgbValueOne[0];
+          ledArray[currentTrailPixel][1] = rgbValueOne[1];
+          ledArray[currentTrailPixel][2] = rgbValueOne[2];
+        }
+      }
 
-			currentTrailPixel = (currentTrailPixel - 1);
-		}
+      currentTrailPixel = (currentTrailPixel - 1);
+    }
 
-		updateStripFromLedArray();
+    updateStripFromLedArray();
 
-		if (currentPixel == ((NUMPIXELS - 1) + trailLength)) {
-			currentPixel = 0;
-			currentStep = 1;
-		}
-		else {
-			currentPixel++;
-			currentStep = 2;
-		}
-	}
-	previousMillis = currentMillis;
+    if (currentPixel == ((NUMPIXELS - 1) + trailLength)) {
+      currentPixel = 0;
+      currentStep = 1;
+    }
+    else {
+      currentPixel++;
+      currentStep = 2;
+    }
+  }
+  previousMillis = currentMillis;
 }
 }
 
 void stairStartup() {
-	if (currentStep == 0) {
-		allRgbValueOne(); // Turn all the lights off first
-		currentPixel = 12; // Start at the end
-		currentStep++;
-	}
+  if (currentStep == 0) {
+    allRgbValueOne(); // Turn all the lights off first
+    currentPixel = 12; // Start at the end
+    currentStep++;
+  }
 
-	else if (currentStep == 1) {
-		fadePixelToTargetColour(stairPixelArray[currentPixel]);
-	}
+  else if (currentStep == 1) {
+    fadePixelToTargetColour(stairPixelArray[currentPixel]);
+  }
 
-	else if (currentStep == 2) {
-		if ((currentPixel - 1) <= -1) { // If we've done all the pixels
-			currentStep = 4;
-		}
+  else if (currentStep == 2) {
+    if ((currentPixel - 1) <= -1) { // If we've done all the pixels
+      currentStep = 4;
+    }
 
-		else if (millis() - previousMillis >= pixelDelay) {
-			currentPixel--;
-			currentStep = 1;
-		}
-	}
+    else if (millis() - previousMillis >= pixelDelay) {
+      currentPixel--;
+      currentStep = 1;
+    }
+  }
 
-	else if (currentStep == 4) {
-		currentMode = 9; // stairsOn
-		setModeDefaults(currentMode);
-		
-		// No need to publish state as mode 10 is considered on anyway and so has already been published
-		publishColour();
-		publishRecovery();
-	}
+  else if (currentStep == 4) {
+    currentMode = 9; // stairsOn
+    setModeDefaults(currentMode);
+    
+    // No need to publish state as mode 10 is considered on anyway and so has already been published
+    publishColour();
+    publishRecovery();
+  }
 }
 
 void stairShutdown() {
-	// This step fades the top LED to red to indicate shutdown
-	if (currentStep == 0) {
-		fadePixelToTargetColour(111);
-	}
-	
-	else if (currentStep == 1) {
-		fadePixelToBaseColour(stairPixelArray[currentPixel]);
-	}
+  // This step fades the top LED to red to indicate shutdown
+  if (currentStep == 0) {
+    fadePixelToTargetColour(111);
+  }
+  
+  else if (currentStep == 1) {
+    fadePixelToBaseColour(stairPixelArray[currentPixel]);
+  }
 
-	else if (currentStep == 2) {
-		if ((currentPixel + 1) >= stairPixelArrayLength) { // If we've done all the pixels
-			currentStep = 3;
-		}
+  else if (currentStep == 2) {
+    if ((currentPixel + 1) >= stairPixelArrayLength) { // If we've done all the pixels
+      currentStep = 3;
+    }
 
-		else if (millis() - previousMillis >= pixelDelay) {
-			currentPixel++;
-			currentStep = 1;
-		}
-	}
+    else if (millis() - previousMillis >= pixelDelay) {
+      currentPixel++;
+      currentStep = 1;
+    }
+  }
 
-	else if (currentStep == 3) {
-		currentMode = 0; // Off
-		setModeDefaults(currentMode);
-		publishAll();
-	}
+  else if (currentStep == 3) {
+    currentMode = 0; // Off
+    setModeDefaults(currentMode);
+    publishAll();
+  }
+}
+
+void rainbow(int rainbowMode) {
+  static int colorVals[3];
+  unsigned long currentMillis = millis();
+  byte WheelPos;
+  if (previousMillis > currentMillis || currentMillis - previousMillis >= colourDelay) {
+    for(int i=0; i<NUMPIXELS; i++) {
+      if (rainbowMode == 1) {// Simple Rainbow
+        WheelPos = 255 - ((i+currentColor) & 255);
+      } else if (rainbowMode == 2) {// equally distributed rainbow
+        WheelPos = 255 - (((i * 256 / NUMPIXELS) + currentColor) & 255);
+      }
+      if(WheelPos < 85) {
+        ledArray[i][0] = 255 - WheelPos * 3;
+        ledArray[i][1] = 0;
+        ledArray[i][2] = WheelPos * 3;
+      } else if(WheelPos < 170) {
+        WheelPos -= 85;
+        ledArray[i][0] = 0;
+        ledArray[i][1] = WheelPos * 3;
+        ledArray[i][2] = 255 - WheelPos * 3;
+      } else {
+        WheelPos -= 170;
+        ledArray[i][0] = WheelPos * 3;
+        ledArray[i][1] = 255 - WheelPos * 3;
+        ledArray[i][2] = 0;
+      }
+
+    }
+    updateStripFromLedArray();
+    previousMillis = currentMillis;
+    if (currentColor == 255) {
+      currentColor = 0;
+    } else {
+      currentColor++;
+    }
+  } 
 }
 #pragma endregion
 
@@ -1125,280 +1164,280 @@ void callback(char* topic, byte* payload, unsigned int length) {
 
 #pragma region commandlTopic
   if (String(commandlTopic).equals(topic)) {
-	  if (length == 1) {
-		  // Off
-		  if ((char)payload[0] == '0') {
-			  resetGlobalAnimationVariables();
-			  currentMode = 0; // Not required as 0 is set by the reset, left in for clarity
-			  setModeDefaults(currentMode);
-			  publishState();
-			  publishRecovery();
-		  }
-		  // On
-		  else if ((char)payload[0] == '1') {
-			  // Only turn on if currentMode is 0
-			  if (currentMode == 0) {
-				  resetGlobalAnimationVariables();
-				  currentMode = 1;
-				  setModeDefaults(currentMode);
-				  publishAll(); // State + Colour + Recovery
-			  }
-		  }
-		  // Toggle - Using a re-publish ensures any changes to the On / Off routines are used for the toggle as well
-		  else if ((char)payload[0] == '2') {
-			  if (currentMode == 0) {
-				  client.publish(commandlTopic, "1");
-			  }
-			  else {
-				  client.publish(commandlTopic, "0"); 
-			  }
-		  }
-		  // Cycle Modes
-		  else if ((char)payload[0] == '9') {
-			  int lastMode = currentMode;
+    if (length == 1) {
+      // Off
+      if ((char)payload[0] == '0') {
+        resetGlobalAnimationVariables();
+        currentMode = 0; // Not required as 0 is set by the reset, left in for clarity
+        setModeDefaults(currentMode);
+        publishState();
+        publishRecovery();
+      }
+      // On
+      else if ((char)payload[0] == '1') {
+        // Only turn on if currentMode is 0
+        if (currentMode == 0) {
+          resetGlobalAnimationVariables();
+          currentMode = 1;
+          setModeDefaults(currentMode);
+          publishAll(); // State + Colour + Recovery
+        }
+      }
+      // Toggle - Using a re-publish ensures any changes to the On / Off routines are used for the toggle as well
+      else if ((char)payload[0] == '2') {
+        if (currentMode == 0) {
+          client.publish(commandlTopic, "1");
+        }
+        else {
+          client.publish(commandlTopic, "0"); 
+        }
+      }
+      // Cycle Modes
+      else if ((char)payload[0] == '9') {
+        int lastMode = currentMode;
 
-			  resetGlobalAnimationVariables();
+        resetGlobalAnimationVariables();
 
-			  currentMode = ++lastMode;
+        currentMode = ++lastMode;
 
-			  if (currentMode > numModes) {
-				  currentMode = 0;
-			  }
+        if (currentMode > numModes) {
+          currentMode = 0;
+        }
 
-			  setModeDefaults(currentMode);
-			  publishAll();
-		  }
-	  }
+        setModeDefaults(currentMode);
+        publishAll();
+      }
+    }
 
-	  else if ((char)payload[0] == '{') {       // It's a JSON
-		  char message_buff[256];               // Max of 256 characters
-		  for (int i = 0; i < length; i++) {
-			  message_buff[i] = payload[i];
-			  if (i == (length - 1)) {          // If we're at the last character
-				  message_buff[i + 1] = '\0';   // Add a string terminator to the next character
-			  }
-		  }  
-		  DynamicJsonBuffer jsonBuffer;                            // Step 1: Reserve memory space (https://bblanchon.github.io/ArduinoJson/)
-		  JsonObject& root = jsonBuffer.parseObject(message_buff); // Step 2: Deserialize the JSON string
+    else if ((char)payload[0] == '{') {       // It's a JSON
+      char message_buff[256];               // Max of 256 characters
+      for (int i = 0; i < length; i++) {
+        message_buff[i] = payload[i];
+        if (i == (length - 1)) {          // If we're at the last character
+          message_buff[i + 1] = '\0';   // Add a string terminator to the next character
+        }
+      }  
+      DynamicJsonBuffer jsonBuffer;                            // Step 1: Reserve memory space (https://bblanchon.github.io/ArduinoJson/)
+      JsonObject& root = jsonBuffer.parseObject(message_buff); // Step 2: Deserialize the JSON string
 
-		  if (!root.success()) {
-			  Serial.println("parseObject() failed");
-		  }
-		  else if (root.success()) {
-			  if (root.containsKey("0")) {
-				  resetGlobalAnimationVariables(); // Only do this if the mode changes
-				  currentMode = root["0"];
-				  setModeDefaults(currentMode); // Only do this if the mode changes
-				  
-				  // We don't publish the recovery message here as other variables might have changed without the mode changing and so we wait until later
-				  publishState();
-				  publishColour();
-			  }
-			  if (currentMode > numModes) { // If mode is greater than is possible, set to 0
-				  currentMode = 0;
-			  }
+      if (!root.success()) {
+        Serial.println("parseObject() failed");
+      }
+      else if (root.success()) {
+        if (root.containsKey("0")) {
+          resetGlobalAnimationVariables(); // Only do this if the mode changes
+          currentMode = root["0"];
+          setModeDefaults(currentMode); // Only do this if the mode changes
+          
+          // We don't publish the recovery message here as other variables might have changed without the mode changing and so we wait until later
+          publishState();
+          publishColour();
+        }
+        if (currentMode > numModes) { // If mode is greater than is possible, set to 0
+          currentMode = 0;
+        }
 
-			  if (root.containsKey("1")) {
-				  rgbValueOne[0] = root["1"][0];
-				  rgbValueOne[1] = root["1"][1];
-				  rgbValueOne[2] = root["1"][2];
+        if (root.containsKey("1")) {
+          rgbValueOne[0] = root["1"][0];
+          rgbValueOne[1] = root["1"][1];
+          rgbValueOne[2] = root["1"][2];
                   flipFlop = 0; // When displaying a static colour this is set to 1 once the LED strip has been updated, resetting this to 0 is needed to trigger the strip update again now the colour has changed.
-			  }
+        }
 
-			  if (root.containsKey("2")) {
-				  rgbValueTwo[0] = root["2"][0];
-				  rgbValueTwo[1] = root["2"][1];
-				  rgbValueTwo[2] = root["2"][2];
+        if (root.containsKey("2")) {
+          rgbValueTwo[0] = root["2"][0];
+          rgbValueTwo[1] = root["2"][1];
+          rgbValueTwo[2] = root["2"][2];
                   flipFlop = 0; // When displaying a static colour this is set to 1 once the LED strip has been updated, resetting this to 0 is needed to trigger the strip update again now the colour has changed.
-				  publishColour();
-			  }
+          publishColour();
+        }
 
-			  if (root.containsKey("3")) {
-				  colourDelay = root["3"];
-			  }
+        if (root.containsKey("3")) {
+          colourDelay = root["3"];
+        }
 
-			  if (root.containsKey("4")) {
-				  colourJump = root["4"];
-			  }
+        if (root.containsKey("4")) {
+          colourJump = root["4"];
+        }
 
-			  if (root.containsKey("5")) {
-				  pixelDelay = root["5"];
-			  }
+        if (root.containsKey("5")) {
+          pixelDelay = root["5"];
+        }
 
-			  if (root.containsKey("6")) {
-				  pixelJump = root["6"];
-			  }
+        if (root.containsKey("6")) {
+          pixelJump = root["6"];
+        }
 
-			  if (root.containsKey("7")) {
-				  randomise = root["7"];
-			  }
+        if (root.containsKey("7")) {
+          randomise = root["7"];
+        }
 
-			  if (root.containsKey("8")) {
-				  loopDelay = root["8"];
-			  }
+        if (root.containsKey("8")) {
+          loopDelay = root["8"];
+        }
 
-			  if (root.containsKey("9")) {
-				  highPixelDelay = root["9"];
-			  }
+        if (root.containsKey("9")) {
+          highPixelDelay = root["9"];
+        }
 
-			  if (root.containsKey("10")) {
-				  multiplier = root["10"];
-			  }
+        if (root.containsKey("10")) {
+          multiplier = root["10"];
+        }
 
-			  if (root.containsKey("11")) {
-				  chance = root["11"];
-			  }
+        if (root.containsKey("11")) {
+          chance = root["11"];
+        }
 
-			  if (root.containsKey("12")) {
-				  trailLength = root["12"];
-			  }
+        if (root.containsKey("12")) {
+          trailLength = root["12"];
+        }
 
-		  }
+      }
 
-		  publishRecovery();
-	  }
+      publishRecovery();
+    }
   }
 #pragma endregion
 
 #pragma region rgbCommandTopic
-	else if (String(rgbCommandTopic).equals(topic)) {
-		String payloadString;
-		for (uint8_t i = 0; i < length; i++) {
-			payloadString.concat((char)payload[i]);
-		}
+  else if (String(rgbCommandTopic).equals(topic)) {
+    String payloadString;
+    for (uint8_t i = 0; i < length; i++) {
+      payloadString.concat((char)payload[i]);
+    }
 
-		uint8_t firstIndex = payloadString.indexOf(',');
-		uint8_t lastIndex = payloadString.lastIndexOf(',');
+    uint8_t firstIndex = payloadString.indexOf(',');
+    uint8_t lastIndex = payloadString.lastIndexOf(',');
 
-		uint8_t rgb_red = payloadString.substring(0, firstIndex).toInt();
-		if (rgb_red < 0 || rgb_red > 255) {
-			return;
-		}
-		else {
-			rgbValueTwo[0] = rgb_red;
-		}
+    uint8_t rgb_red = payloadString.substring(0, firstIndex).toInt();
+    if (rgb_red < 0 || rgb_red > 255) {
+      return;
+    }
+    else {
+      rgbValueTwo[0] = rgb_red;
+    }
 
-		uint8_t rgb_green = payloadString.substring(firstIndex + 1, lastIndex).toInt();
-		if (rgb_green < 0 || rgb_green > 255) {
-			return;
-		}
-		else {
-			rgbValueTwo[1] = rgb_green;
-		}
+    uint8_t rgb_green = payloadString.substring(firstIndex + 1, lastIndex).toInt();
+    if (rgb_green < 0 || rgb_green > 255) {
+      return;
+    }
+    else {
+      rgbValueTwo[1] = rgb_green;
+    }
 
-		uint8_t rgb_blue = payloadString.substring(lastIndex + 1).toInt();
-		if (rgb_blue < 0 || rgb_blue > 255) {
-			return;
-		}
-		else {
-			rgbValueTwo[2] = rgb_blue;
-		}
+    uint8_t rgb_blue = payloadString.substring(lastIndex + 1).toInt();
+    if (rgb_blue < 0 || rgb_blue > 255) {
+      return;
+    }
+    else {
+      rgbValueTwo[2] = rgb_blue;
+    }
         
     flipFlop = 0; // When displaying a static colour this is set to 1 once the LED strip has been updated, resetting this to 0 is needed to trigger the strip update again now the colour has changed.
 
-		// No need to publish the state, it can't have changed.
-		publishColour();
-		publishRecovery();
-	}
+    // No need to publish the state, it can't have changed.
+    publishColour();
+    publishRecovery();
+  }
 #pragma endregion
 
 #pragma region sunPositionTopic
-	else if (String(sunPositionTopic).equals(topic)) {
-		if ((char)payload[0] == '0') {
-			sunPosition = 0;
-		}
-		else if ((char)payload[0] == '1') {
-			sunPosition = 1;
-		}
-	}
+  else if (String(sunPositionTopic).equals(topic)) {
+    if ((char)payload[0] == '0') {
+      sunPosition = 0;
+    }
+    else if ((char)payload[0] == '1') {
+      sunPosition = 1;
+    }
+  }
 #pragma endregion
 
 #pragma region recoveryTopic
-	else if (String(recoveryTopic).equals(topic) && recovered == false) {
-		char message_buff[256];
-		for (int i = 0; i < length; i++) {
-			message_buff[i] = payload[i];
-			if (i == (length - 1)) {              // If we're at the last character
-				message_buff[i + 1] = '\0';       // Add a string terminator to the next character
-			}
-		}
-		StaticJsonBuffer<300> jsonBuffer;							// Reserve memory space (https://bblanchon.github.io/ArduinoJson/)
-		JsonObject& root = jsonBuffer.parseObject(message_buff);    // Step 2: Deserialize the JSON string
+  else if (String(recoveryTopic).equals(topic) && recovered == false) {
+    char message_buff[256];
+    for (int i = 0; i < length; i++) {
+      message_buff[i] = payload[i];
+      if (i == (length - 1)) {              // If we're at the last character
+        message_buff[i + 1] = '\0';       // Add a string terminator to the next character
+      }
+    }
+    StaticJsonBuffer<300> jsonBuffer;             // Reserve memory space (https://bblanchon.github.io/ArduinoJson/)
+    JsonObject& root = jsonBuffer.parseObject(message_buff);    // Step 2: Deserialize the JSON string
 
-		if (!root.success()) {
-			Serial.println("parseObject() failed");
-		}
-		else if (root.success()) {
-			if (root.containsKey("0")) {
-				currentMode = root["0"];
-				setModeDefaults(currentMode); // Only do this if the mode changes
-			}
-			if (currentMode > numModes) { // If mode is greater than is possible, set to 0
-				currentMode = 0;
-			}
+    if (!root.success()) {
+      Serial.println("parseObject() failed");
+    }
+    else if (root.success()) {
+      if (root.containsKey("0")) {
+        currentMode = root["0"];
+        setModeDefaults(currentMode); // Only do this if the mode changes
+      }
+      if (currentMode > numModes) { // If mode is greater than is possible, set to 0
+        currentMode = 0;
+      }
 
-			if (root.containsKey("1")) {
-				rgbValueOne[0] = root["1"][0];
-				rgbValueOne[1] = root["1"][1];
-				rgbValueOne[2] = root["1"][2];
-			}
+      if (root.containsKey("1")) {
+        rgbValueOne[0] = root["1"][0];
+        rgbValueOne[1] = root["1"][1];
+        rgbValueOne[2] = root["1"][2];
+      }
 
-			if (root.containsKey("2")) {
-				rgbValueTwo[0] = root["2"][0];
-				rgbValueTwo[1] = root["2"][1];
-				rgbValueTwo[2] = root["2"][2];
-				publishColour();
-			}
+      if (root.containsKey("2")) {
+        rgbValueTwo[0] = root["2"][0];
+        rgbValueTwo[1] = root["2"][1];
+        rgbValueTwo[2] = root["2"][2];
+        publishColour();
+      }
 
-			if (root.containsKey("3")) {
-				colourDelay = root["3"];
-			}
+      if (root.containsKey("3")) {
+        colourDelay = root["3"];
+      }
 
-			if (root.containsKey("4")) {
-				colourJump = root["4"];
-			}
+      if (root.containsKey("4")) {
+        colourJump = root["4"];
+      }
 
-			if (root.containsKey("5")) {
-				pixelDelay = root["5"];
-			}
+      if (root.containsKey("5")) {
+        pixelDelay = root["5"];
+      }
 
-			if (root.containsKey("6")) {
-				pixelJump = root["6"];
-			}
+      if (root.containsKey("6")) {
+        pixelJump = root["6"];
+      }
 
-			if (root.containsKey("7")) {
-				randomise = root["7"];
-			}
+      if (root.containsKey("7")) {
+        randomise = root["7"];
+      }
 
-			if (root.containsKey("8")) {
-				loopDelay = root["8"];
-			}
+      if (root.containsKey("8")) {
+        loopDelay = root["8"];
+      }
 
-			if (root.containsKey("9")) {
-				highPixelDelay = root["9"];
-			}
+      if (root.containsKey("9")) {
+        highPixelDelay = root["9"];
+      }
 
-			if (root.containsKey("10")) {
-				multiplier = root["10"];
-			}
+      if (root.containsKey("10")) {
+        multiplier = root["10"];
+      }
 
-			if (root.containsKey("11")) {
-				chance = root["11"];
-			}
+      if (root.containsKey("11")) {
+        chance = root["11"];
+      }
 
-			if (root.containsKey("12")) {
-				trailLength = root["12"];
-			}
+      if (root.containsKey("12")) {
+        trailLength = root["12"];
+      }
 
-			// No need to publish recovery message as it would match the current settings anyway
-			publishState();
-			publishColour();
+      // No need to publish recovery message as it would match the current settings anyway
+      publishState();
+      publishColour();
 
       flipFlop = 0; // When displaying a static colour this is set to 1 once the LED strip has been updated, resetting this to 0 is needed to trigger the strip update again.
-		}
+    }
 
-		recovered = true;
-	}
+    recovered = true;
+  }
 #pragma endregion
 }
 
@@ -1407,19 +1446,19 @@ void loop() {
     reconnect();
   }
   else {
-	  client.loop();
+    client.loop();
   }
 
   if (currentMode == 0) {
-  	if (stairs == true) { // Special Off Mode for Stairs
-  		stairsOff();
-  	}
-  	else {
-  		allRgbValueOne(); // Normal
-  	}
+    if (stairs == true) { // Special Off Mode for Stairs
+      stairsOff();
+    }
+    else {
+      allRgbValueOne(); // Normal
+    }
   }
   else if (currentMode == 1) {
-	fadeToColour(true);
+  fadeToColour(true);
   }
   else if (currentMode == 2) {
     fadeToColour(true);
@@ -1443,13 +1482,19 @@ void loop() {
     rain();
   }
   else if (currentMode == 9) {
-	stairsOn();
+  stairsOn();
   }
   else if (currentMode == 10) {
-	stairShutdown();
+  stairShutdown();
   }
   else if (currentMode == 11) {
-	stairStartup();
+  stairStartup();
+  }
+  else if (currentMode == 12) {
+    rainbow(1);
+  }
+  else if (currentMode == 13) {
+    rainbow(2);
   }
 
   if ((millis() - availabilityPublishInterval) >= availabilityPublishTimer) {
