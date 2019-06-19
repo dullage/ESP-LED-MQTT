@@ -21,9 +21,7 @@ int ledArray[NUMPIXELS][3]; // Custom array to allow us to buffer changes before
 WiFiClient espClient;
 
 // MQTT
-int mqtt_port = 1883;
 PubSubClient client(espClient);
-
 const uint8_t bufferSize = 20;
 char buffer[bufferSize];
 
@@ -34,14 +32,6 @@ unsigned long messageInterval = 1000;
 int currentReconnectStep = 0;
 boolean offlineMode = true;
 boolean recovered = false;
-
-// Device Specific Topics
-const char* commandlTopic = "light/led_kitchen";
-const char* stateTopic = "light/led_kitchen/state";
-const char* rgbCommandTopic = "light/led_kitchen/rgb";
-const char* rgbStateTopic = "light/led_kitchen/rgb/state";
-const char* availabilityTopic = "light/led_kitchen/availability";
-const char* recoveryTopic = "light/led_kitchen/recovery";
 
 // Device specific variables (currently only used for animations specific to my stair LEDs, leave false if you are not me)
 boolean stairs = false;

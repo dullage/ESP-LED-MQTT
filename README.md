@@ -5,7 +5,7 @@ To use this code simply configure the PIN and NUMPIXELS variables in the NeoPixe
 
 ## Features
 * Works well with Home Assistant.
-* Includes 7 animations.
+* Includes 9 animations.
 * Basic control using simple MQTT commands (e.g. "1" to turn on, "0" to turn off).
 * Advanced control using JSON MQTT commands.
 * Tweak animation variables without needing to alter code.
@@ -15,14 +15,18 @@ To use this code simply configure the PIN and NUMPIXELS variables in the NeoPixe
 * You can optionally enable ArduinoOTA to make uploading changes easier.
 
 ## Change Log
-21/11/2018
-* Removed brightness control WIP.
-* Limited calls to pixels.show() as some were causing a WTD reset.
-* Updated MQTT topic variable names in line with Home Assistant.
+19/06/2019
+* Config is now in a separate file.
+* 2 new animations added.
 
 09/12/2018
 * Added support for ArduinoOTA.
 * Availability is now published every 30 seconds.
+
+21/11/2018
+* Removed brightness control WIP.
+* Limited calls to pixels.show() as some were causing a WTD reset.
+* Updated MQTT topic variable names in line with Home Assistant.
 
 ## Dependencies
 The following libraries are required and so must be present when compiling.
@@ -82,6 +86,8 @@ The message below would turn all LEDs to Blue (Mode = 1, rgbColourTwo = Blue). S
 | 9 | Stairs On | rgbValueOne, rgbValueTwo |
 | 10 | Stair Shutdown | |
 | 11 | Stair Startup | rgbValueTwo |
+| 12 | Rainbow 1 (Similar to Colour Phase) | colourDelay |
+| 13 | Rainbow 2 | colourDelay |
 
 ## Home Assistant Examples
 **light:**
@@ -116,9 +122,8 @@ lamp:
       - "Sparkle"
       - "Shoot / Drip"
       - "Rain"
-      - "Stepped"
-      - "Startup"
-      - "Shutdown"
+      - "Rainbow 1"
+      - "Rainbow 2"
     initial: "Select..."
 ```
 
@@ -148,12 +153,10 @@ Sends the appropriate MQTT command when a mode is selected and then returns the 
             {0:7,2:[255,147,41],8:0,10:1,9:30, 5:0 ,4:255,3:0,12:5,7:0}
           {% elif trigger.to_state.state == 'Rain' %}
             {0:8,11:1100}
-          {% elif trigger.to_state.state == 'Stepped' %}
-            {0:9}
-          {% elif trigger.to_state.state == 'Startup' %}
-            {0:11,3:1,4:4}
-          {% elif trigger.to_state.state == 'Shutdown' %}
-            {0:10,3:1}
+          {% elif trigger.to_state.state == 'Rainbow 1' %}
+            {0:12}
+          {% elif trigger.to_state.state == 'Rainbow 2' %}
+            {0:13}
           {% else %}
             {}
           {% endif %}
@@ -163,3 +166,11 @@ Sends the appropriate MQTT command when a mode is selected and then returns the 
         entity_id: input_select.stairlamp_mode
         option: 'Select...'
 ```
+
+## Contributers
+
+![GitHub contributors](https://img.shields.io/github/contributors/dullage/ESP-LED-MQTT.svg)
+
+Contributors are welcome.
+
+Thanks to [dajomas](https://github.com/dajomas) for spliting out the configuration and adding the Rainbow animations.
