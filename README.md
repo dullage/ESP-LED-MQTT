@@ -1,7 +1,7 @@
 ## Overview
-Allows the WiFi control of a WS8212 LED strip using an ESP8266 controller and an MQTT broker. Designed to work well with Home Assistant https://home-assistant.io/.
+Allows the WiFi control of a ~WS8212~ WS2801 LED strip using an ESP8266 controller and an MQTT broker. Designed to work well with Home Assistant https://home-assistant.io/.
 
-To use this code simply configure the PIN and NUMPIXELS variables in the NeoPixel section. You will also need to configure the credentials for your WiFi and MQTT broker, see <REDACTED> code. Lastly you can tailor the MQTT topics as required.
+To use this code simply configure the LED_DATA_PIN, LED_CLOCK_PIN and NUMPIXELS variables in the NeoPixel section. You will also need to configure the credentials for your WiFi and MQTT broker, see <REDACTED> code. Lastly you can tailor the MQTT topics as required.
 
 ## Features
 * Works well with Home Assistant.
@@ -15,6 +15,11 @@ To use this code simply configure the PIN and NUMPIXELS variables in the NeoPixe
 * You can optionally enable ArduinoOTA to make uploading changes easier.
 
 ## Change Log
+19/06/2019
+* Updated for ArduinoJson6
+* NeoPixel Integration Replaced with support for WS2801 pixels using WS2801FX
+* Added Mode support for WS2801FX animations
+
 19/06/2019
 * Config is now in a separate file.
 * 2 new animations added.
